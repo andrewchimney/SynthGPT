@@ -7,7 +7,6 @@ app = FastAPI()
 def health():
     return {"ok": True}
 
-
 # API Endpoints:
 # Auth / Users
 # 	•	POST /api/auth/register

@@ -37,6 +37,8 @@ install packages:
 pip install -r backend/requirements.txt
 ```
 
+Create a .env file and then copy .env.example to .env. Docker will use .env to store all of our passwords and keys. However, we can't expose these keys so .env will have to be gitignore. For since, all the services are hosted locally and have dummy data, we can use expose passwords. Copy the entire .env.example file into .env and make sure to save the file.
+
 
 Make sure Docker Desktop is installed and running:
 https://www.docker.com/products/docker-desktop/
@@ -90,5 +92,3 @@ The backend accesses the objects with:
 * Access Key: minioadmin
 * Secret Key: minioadmin123
 * Bucket: synthgpt
-
-Note: because this is all local dummy data, we can push passwords to github, but when we move to a hosted database, we will need to use github secrets and a .env file to hold passwords for services.
