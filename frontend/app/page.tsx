@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient, type User } from "@supabase/supabase-js";
 
 const placeholderExamples = [
   "Give me a powerful bass for a hip-hop track",
@@ -15,12 +16,66 @@ const placeholderExamples = [
 ];
 
 export default function Home() {
-  const [placeholder, setPlaceholder] = useState("");
+  const [placeholder] = useState(() => placeholderExamples[Math.floor(Math.random() * placeholderExamples.length)]);
+  const [user, setUser] = useState<User | null>(null);
+  const [showAuthPanel, setShowAuthPanel] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  const supabase = useMemo(() => {
+    if (!supabaseUrl || !supabaseAnonKey) return null;
+    return createClient(supabaseUrl, supabaseAnonKey);
+  }, [supabaseAnonKey, supabaseUrl]);
 
   useEffect(() => {
-    const randomPlaceholder = placeholderExamples[Math.floor(Math.random() * placeholderExamples.length)];
-    setPlaceholder(randomPlaceholder);
-  }, []);
+    if (!supabase) return;
+
+    let isMounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!isMounted) return;
+      setUser(data.session?.user ?? null);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) return;
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      isMounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  const handleDiscordLogin = async () => {
+    if (!supabase) {
+      setAuthError("Supabase not configured (set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).");
+      return;
+    }
+
+    setAuthError(null);
+    setAuthLoading(true);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "discord",
+      options: {
+        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+      },
+    });
+
+    setAuthLoading(false);
+    if (error) setAuthError(error.message);
+  };
+
+  const handleSignOut = async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setShowAuthPanel(false);
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
@@ -41,25 +96,89 @@ export default function Home() {
         </div>
         
         {/* Generate and Profile */}
-        <div className="flex items-center gap-6">
-          <button className="text-sm font-medium text-black transition-colors hover:text-zinc-600 hover:underline dark:text-white dark:hover:text-zinc-300">
+        <div className="relative flex items-center gap-6">
+          <button className="text-sm font-medium text-black transition-colors hover:text-zinc-600 hover:underline dark:text-white dark:hover:text-zinc-300 cursor-pointer">
             Generate
           </button>
-          <button className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200 transition-colors hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700">
-            <svg
-              className="h-5 w-5 text-zinc-600 dark:text-zinc-300"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          {user ? (
+            <button
+              aria-label="Profile"
+              onClick={() => setShowAuthPanel((open) => !open)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200 transition-colors hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 cursor-pointer"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-              />
-            </svg>
-          </button>
+              <svg
+                className="h-5 w-5 text-zinc-600 dark:text-zinc-300"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                />
+              </svg>
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowAuthPanel((open) => !open)}
+              className="text-sm font-medium text-black transition-colors hover:text-zinc-600 dark:text-white dark:hover:text-zinc-300 cursor-pointer"
+            >
+              Log In
+            </button>
+          )}
+
+          {showAuthPanel && (
+            <div className="fixed right-6 top-16 z-50 w-80 rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl shadow-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900">
+              {!supabase && (
+                <div className="text-sm text-red-600 dark:text-red-400">
+                  Supabase env vars missing. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
+                </div>
+              )}
+
+              {supabase && (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm font-semibold text-black dark:text-white">Account</div>
+                    <button
+                      className="text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      onClick={() => setShowAuthPanel(false)}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  {user ? (
+                    <div className="space-y-3">
+                      <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
+                        Signed in as <span className="font-medium">{user.email}</span>
+                      </div>
+                      <button
+                        onClick={handleSignOut}
+                        className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="text-sm text-zinc-700 dark:text-zinc-200">Sign in to continue</div>
+                      <button
+                        onClick={handleDiscordLogin}
+                        disabled={authLoading}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700"
+                      >
+                        <span aria-hidden>💬</span>
+                        {authLoading ? "Redirecting..." : "Continue with Discord"}
+                      </button>
+                      {authError && <div className="text-xs text-red-600 dark:text-red-400">{authError}</div>}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </nav>
 
@@ -92,7 +211,7 @@ export default function Home() {
         </div>
         
         {/* Center Content */}
-        <div className="flex flex-col items-center gap-8 text-center max-w-[30rem] w-full">
+        <div className="flex flex-col items-center gap-8 text-center max-w-120 w-full">
           <h1 className="text-7xl font-semibold tracking-tight text-black dark:text-zinc-50">
             Resonance
           </h1>
