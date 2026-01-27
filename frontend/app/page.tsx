@@ -16,7 +16,11 @@ const placeholderExamples = [
 ];
 
 export default function Home() {
-  const [placeholder] = useState(() => placeholderExamples[Math.floor(Math.random() * placeholderExamples.length)]);
+  const [placeholder] = useState(() => 
+    typeof window !== "undefined" 
+      ? placeholderExamples[Math.floor(Math.random() * placeholderExamples.length)]
+      : ""
+  );
   const [user, setUser] = useState<User | null>(null);
   const [showAuthPanel, setShowAuthPanel] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
