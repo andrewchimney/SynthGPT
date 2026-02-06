@@ -14,6 +14,7 @@ services:
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - EMBEDDING_MODEL=clap
       - EMBEDDING_DIM=512
+      - HF_TOKEN=${HF_TOKEN}
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
       
   frontend:

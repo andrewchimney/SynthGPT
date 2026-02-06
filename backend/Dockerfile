@@ -11,6 +11,4 @@ COPY . .
 
 ENV HF_HOME=/root/.cache/huggingface
 
-RUN python -c "import laion_clap; m=laion_clap.CLAP_Module(enable_fusion=False); m.load_ckpt(); print('CLAP cached')"
-
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

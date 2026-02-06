@@ -1,5 +1,6 @@
 # Main server file, will process requests and use logic from rag folder to respond to frontend requests
 
+from contextlib import asynccontextmanager
 import os
 import asyncpg
 from pydantic import BaseModel
@@ -7,14 +8,42 @@ from fastapi import FastAPI
 from dotenv import load_dotenv 
 load_dotenv()
 
+from fastapi.middleware.cors import CORSMiddleware
+
+import laion_clap
+
 
 from rag.retrieve import router as retrieve_router
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
+def load_model():
+    model = laion_clap.CLAP_Module(enable_fusion=False)
+    model.load_ckpt()
+    return model
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Loading CLAP model")
+    app.state.clap = load_model()
+    print("CLAP model loaded)")
+
+    yield
+    
+    del app.state.clap
+
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/api/health")
 def health():
@@ -26,6 +55,7 @@ class RetrieveRequest(BaseModel):
     k: int = 10
 
 app.include_router(retrieve_router)
+
 
 
 @app.get("/api/presets")

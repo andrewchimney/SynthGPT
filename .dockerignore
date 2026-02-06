@@ -1,0 +1,19 @@
+# big data
+data/
+backend/data/
+tmp_wavs/
+vitals/
+previews/
+presets/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# node
+**/node_modules/
+.next/
+
+# git
+.git/
