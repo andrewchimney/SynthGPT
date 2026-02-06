@@ -19,3 +19,12 @@ curl -X POST http://link \
     -H "Content-Type: application/json" \
     -d '{"data": "data"}'
 
+
+
+
+curl -X POST "http://localhost:8000/api/retrieve" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "bright plucky lead",
+    "k": 5
+  }'

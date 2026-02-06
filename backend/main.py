@@ -2,10 +2,13 @@
 
 import os
 import asyncpg
+from pydantic import BaseModel
 from fastapi import FastAPI
 from dotenv import load_dotenv 
 load_dotenv()
 
+
+from rag.retrieve import router as retrieve_router
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -16,6 +19,14 @@ app = FastAPI()
 @app.get("/api/health")
 def health():
     return {"ok": True}
+
+
+class RetrieveRequest(BaseModel):
+    query: str
+    k: int = 10
+
+app.include_router(retrieve_router)
+
 
 @app.get("/api/presets")
 async def get_presets():

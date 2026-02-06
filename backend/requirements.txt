@@ -7,3 +7,8 @@ python-multipart
 #vita 
 psycopg2-binary
 asyncpg
+pydantic
+supabase
+laion-clap
+torch
+torchvision

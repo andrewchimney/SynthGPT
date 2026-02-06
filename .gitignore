@@ -18,7 +18,11 @@ out/
 # Python
 __pycache__/
 .venv/
+/backend/data/
 
 #other
 .env
 .vital
+.wav
+.zip
+.7z
