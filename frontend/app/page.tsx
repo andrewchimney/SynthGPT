@@ -1,8 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type User } from "@supabase/supabase-js";
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  isLoading?: boolean;
+}
 
 const placeholderExamples = [
   "Give me a powerful bass for a hip-hop track",
@@ -25,6 +31,12 @@ export default function Home() {
   const [showAuthPanel, setShowAuthPanel] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  
+  // Chat state
+  const [inputValue, setInputValue] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [showChat, setShowChat] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -81,8 +93,40 @@ export default function Home() {
     setShowAuthPanel(false);
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputValue.trim()) return;
+
+    // Add user message
+    const userMessage: Message = { role: "user", content: inputValue };
+    setMessages((prev) => [...prev, userMessage]);
+    setInputValue("");
+    setShowChat(true);
+
+    // Add loading message
+    const loadingMessage: Message = { role: "assistant", content: "", isLoading: true };
+    setMessages((prev) => [...prev, loadingMessage]);
+
+    // Simulate AI response after 2 seconds
+    setTimeout(() => {
+      setMessages((prev) => {
+        const withoutLoading = prev.filter((msg) => !msg.isLoading);
+        const assistantMessage: Message = {
+          role: "assistant",
+          content: "This is a placeholder response. I'll generate a synth preset based on your description once connected to the backend.",
+        };
+        return [...withoutLoading, assistantMessage];
+      });
+    }, 2000);
+  };
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
+    <div className="flex h-screen flex-col bg-zinc-50 font-sans dark:bg-black overflow-hidden">
       {/* Navbar */}
       <nav className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-black">
         {/* Logo/Brand */}
@@ -187,9 +231,9 @@ export default function Home() {
       </nav>
 
       {/* Main Content */}
-      <main className="flex flex-1 w-full items-start justify-center bg-white dark:bg-black px-8 pt-32 gap-24">
+      <main className="flex flex-1 w-full items-start justify-center bg-white dark:bg-black pt-32 overflow-hidden" style={{ minWidth: '1400px' }}>
         {/* Left Robot Image */}
-        <div className="flex-1 flex justify-end">
+        <div className="flex justify-end h-full" style={{ width: '300px', marginRight: '80px' }}>
           <div className="pt-16">
           <div className="flex justify-end pr-20">
           <Image
@@ -215,21 +259,80 @@ export default function Home() {
         </div>
         
         {/* Center Content */}
-        <div className="flex flex-col items-center gap-8 text-center max-w-120 w-full">
-          <h1 className="text-7xl font-semibold tracking-tight text-black dark:text-zinc-50">
-            Resonance
-          </h1>
-          <div className="w-full">
-            <input
-              type="text"
-              placeholder={placeholder}
-              className="w-full rounded-xl border border-zinc-300 bg-zinc-50 px-6 py-3 text-base text-black placeholder-zinc-500 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-400"
-            />
-          </div>
+        <div className="flex flex-col w-full" style={{ maxWidth: '600px' }}>
+          {!showChat ? (
+            // Initial hero view
+            <div className="flex flex-col items-center gap-8 text-center">
+              <h1 className="text-7xl font-semibold tracking-tight text-black dark:text-zinc-50">
+                Resonance
+              </h1>
+              <form onSubmit={handleSubmit} className="w-full">
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder={placeholder}
+                  className="w-full rounded-xl border border-zinc-300 bg-zinc-50 px-6 py-3 text-base text-black placeholder-zinc-500 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-400"
+                />
+              </form>
+            </div>
+          ) : (
+            // Chat view
+            <div className="flex flex-col h-full" style={{ height: 'calc(100vh - 280px)' }}>
+              {/* Messages container */}
+              <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
+                {messages.map((message, index) => (
+                  <div
+                    key={index}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    {message.isLoading ? (
+                      <div className="rounded-2xl bg-white border border-zinc-300 px-4 py-3 text-black dark:bg-zinc-800 dark:border-zinc-700 dark:text-white max-w-[80%]">
+                        <div className="flex gap-1 items-center">
+                          <div className="bouncing-dot" style={{ animationDelay: '0s' }}></div>
+                          <div className="bouncing-dot" style={{ animationDelay: '0.2s' }}></div>
+                          <div className="bouncing-dot" style={{ animationDelay: '0.4s' }}></div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={`rounded-2xl px-4 py-3 max-w-[80%] ${
+                          message.role === "user"
+                            ? "bg-zinc-800 text-white dark:bg-zinc-700"
+                            : "bg-white border border-zinc-300 text-black dark:bg-zinc-800 dark:border-zinc-700 dark:text-white"
+                        }`}
+                      >
+                        {message.content}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input form */}
+              <form onSubmit={handleSubmit} className="flex gap-2">
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder="Type your message..."
+                  className="flex-1 rounded-xl border border-zinc-300 bg-zinc-50 px-6 py-3 text-base text-black placeholder-zinc-500 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-400"
+                />
+                <button
+                  type="submit"
+                  disabled={!inputValue.trim()}
+                  className="rounded-xl bg-white border border-zinc-300 px-6 py-3 text-base font-medium text-black transition hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-zinc-800 dark:border-zinc-700 dark:text-white dark:hover:bg-zinc-700"
+                >
+                  Send
+                </button>
+              </form>
+            </div>
+          )}
         </div>
 
         {/* Right Robot Image (Mirrored) */}
-        <div className="flex-1 flex justify-start">
+        <div className="flex justify-start h-full" style={{ width: '300px', marginLeft: '80px' }}>
           <div className="pt-16">
           <div className="flex justify-start pl-20">
           <Image
