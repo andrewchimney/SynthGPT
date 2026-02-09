@@ -7,9 +7,12 @@ DROP TABLE IF EXISTS public.users CASCADE;
 CREATE TABLE public.users (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT UNIQUE NOT NULL,
-  generation_preferences TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
+  email TEXT UNIQUE,
+  password_hash TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  generation_preferences TEXT
 );
+
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow auth trigger to insert user"
 ON public.users
@@ -59,7 +62,6 @@ ON public.users
 FOR UPDATE
 USING (auth.uid() = id);
 
-
 CREATE TABLE presets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID REFERENCES users(id),
@@ -73,7 +75,8 @@ CREATE TABLE presets (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE posts(
+-- Posts table
+CREATE TABLE posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID REFERENCES users(id),
   preset_id UUID REFERENCES presets(id),
@@ -84,6 +87,7 @@ CREATE TABLE posts(
   votes INTEGER DEFAULT 0
 
 );
+
 CREATE TABLE comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID REFERENCES users(id),
