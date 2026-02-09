@@ -18,8 +18,8 @@ interface Post {
   preview_object_key: string | null;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-const STORAGE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL + "/storage/v1/object/public/";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const STORAGE_URL = process.env.NEXT_PUBLIC_STORAGE_URL;
 
 export default function BrowsePage() {
   const [user, setUser] = useState<User | null>(null);
