@@ -20,7 +20,7 @@ interface Post {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-const STORAGE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL + "/storage/v1/object/public/";
+const PREVIEWS_BUCKET = process.env.NEXT_PUBLIC_PREVIEWS_BUCKET || "https://tsgqkjbmcokktrdyyiro.supabase.co/storage/v1/object/public/previews";
 
 export default function BrowsePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -323,7 +323,7 @@ export default function BrowsePage() {
                       <audio
                         controls
                         className="w-full h-10 rounded-lg"
-                        src={`${STORAGE_URL}${post.preview_object_key}`}
+                        src={`${PREVIEWS_BUCKET}/${encodeURIComponent(post.preview_object_key).replace(/%2F/g, '/')}`}
                       >
                         Your browser does not support the audio element.
                       </audio>

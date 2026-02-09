@@ -47,8 +47,9 @@ export default function GeneratePage() {
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Use hardcoded Supabase URL (same as generate page) since env vars don't work in Docker
-  const SUPABASE_STORAGE_URL = "https://tsgqkjbmcokktrdyyiro.supabase.co/storage/v1/object/public";
+  // Use env vars for bucket URLs
+  const PRESETS_BUCKET = process.env.NEXT_PUBLIC_PRESETS_BUCKET;
+  const PREVIEWS_BUCKET = process.env.NEXT_PUBLIC_PREVIEWS_BUCKET;
   
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -365,7 +366,7 @@ export default function GeneratePage() {
                                     </div>
                                   </div>
                                   <a
-                                    href={`${SUPABASE_STORAGE_URL}/presets/${preset.preset_object_key || preset.id}`}
+                                    href={`${PRESETS_BUCKET}/${preset.preset_object_key || preset.id}`}
                                     download
                                     className="px-2 py-1 border border-black dark:border-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition"
                                     title="Download"
@@ -381,7 +382,7 @@ export default function GeneratePage() {
                                       controls
                                       className="w-full"
                                       style={{ height: '40px' }}
-                                      src={`${SUPABASE_STORAGE_URL}/previews/${preset.preview_object_key}`}
+                                      src={`${PREVIEWS_BUCKET}/${preset.preview_object_key}`}
                                     >
                                       Your browser does not support the audio element.
                                     </audio>

@@ -79,9 +79,6 @@ interface PresetViewerProps {
 
 export default function PresetViewer({ preset, presetName, category, uploadDate }: PresetViewerProps) {
   const activeEffects = preset.effects.filter(e => e.enabled);
-  const activeLFOCount = preset.lfos.filter((_, i) => 
-    preset.modulations.some(m => m.source.includes(`lfo ${i + 1}`))
-  ).length;
   
   const cat = category?.toLowerCase() || 'other';
   const categoryStyle = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
@@ -108,6 +105,26 @@ export default function PresetViewer({ preset, presetName, category, uploadDate 
 
       {/* Compact Info Grid */}
       <div className="p-5 space-y-4">
+        {/* Wavetables - Show oscillator wavetable names */}
+        <div className="flex items-center gap-4">
+          <span className="text-xs text-zinc-500 w-16">Wavetables</span>
+          <div className="flex gap-2">
+            {preset.oscillators.map((osc) => (
+              <div 
+                key={osc.id}
+                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg ${
+                  osc.enabled ? 'bg-zinc-800' : 'bg-zinc-800/50 opacity-50'
+                }`}
+              >
+                <span className="text-[10px] text-zinc-500">OSC{osc.id}</span>
+                <span className={`text-[11px] ${osc.enabled ? 'text-zinc-200' : 'text-zinc-500'}`}>
+                  {osc.wavetableName}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Envelopes - Mini visual */}
         <div className="flex items-center gap-4">
           <span className="text-xs text-zinc-500 w-16">Envelopes</span>
@@ -120,18 +137,6 @@ export default function PresetViewer({ preset, presetName, category, uploadDate 
               <span className="text-[11px] text-zinc-400">Mod</span>
               <MiniEnvelope envelope={preset.envelopes[1]} />
             </div>
-          </div>
-        </div>
-
-        {/* LFOs - Just count */}
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-zinc-500 w-16">LFOs</span>
-          <div className="flex gap-1">
-            {activeLFOCount > 0 ? (
-              <Chip>{activeLFOCount} active</Chip>
-            ) : (
-              <Chip active={false}>None</Chip>
-            )}
           </div>
         </div>
 

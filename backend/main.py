@@ -2,10 +2,11 @@
 
 from contextlib import asynccontextmanager
 import os
+from typing import Optional
 import asyncpg
 from typing import Optional
 from pydantic import BaseModel
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from dotenv import load_dotenv 
 load_dotenv()
 
