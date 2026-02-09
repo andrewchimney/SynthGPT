@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { createClient, type User } from "@supabase/supabase-js";
-import { PresetViewer, parseVitalPreset, type ParsedPreset } from "../components/PresetViewer";
+import { PresetViewer, parseVitalPreset, type ParsedPreset, type RawVitalPreset } from "../components/PresetViewer";
 
 interface Post {
   id: string;
@@ -21,9 +21,9 @@ interface Post {
   preset_object_key: string | null;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-const PREVIEWS_BUCKET = process.env.NEXT_PUBLIC_PREVIEWS_BUCKET || "https://tsgqkjbmcokktrdyyiro.supabase.co/storage/v1/object/public/previews";
-const PRESETS_BUCKET = process.env.NEXT_PUBLIC_PRESETS_BUCKET || "https://tsgqkjbmcokktrdyyiro.supabase.co/storage/v1/object/public/presets";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const STORAGE_URL = process.env.NEXT_PUBLIC_STORAGE_URL || process.env.NEXT_PUBLIC_PREVIEWS_BUCKET;
+const PRESETS_URL = process.env.NEXT_PUBLIC_PRESETS_URL || process.env.NEXT_PUBLIC_PRESETS_BUCKET;
 
 export default function BrowsePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -34,6 +34,9 @@ export default function BrowsePage() {
   const [postsLoading, setPostsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [parsedPresets, setParsedPresets] = useState<Record<string, ParsedPreset>>({});
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const [presetData, setPresetData] = useState<Record<string, ParsedPreset | null>>({});
+  const [presetLoading, setPresetLoading] = useState<string | null>(null);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -90,34 +93,44 @@ export default function BrowsePage() {
     fetchPosts();
   }, [searchQuery]);
 
-  // Fetch and parse preset data for posts
-  useEffect(() => {
-    const fetchPresets = async () => {
-      const postsWithPresets = posts.filter(p => p.preset_object_key);
-      
-      for (const post of postsWithPresets) {
-        // Skip if already parsed
-        if (parsedPresets[post.id]) continue;
-        
-        try {
-          const presetUrl = `${PRESETS_BUCKET}/${encodeURIComponent(post.preset_object_key!).replace(/%2F/g, '/')}`;
-          const response = await fetch(presetUrl);
-          if (!response.ok) continue;
-          
-          const rawPreset = await response.json();
-          const parsed = parseVitalPreset(rawPreset);
-          
-          setParsedPresets(prev => ({ ...prev, [post.id]: parsed }));
-        } catch (error) {
-          console.error(`Error fetching preset for post ${post.id}:`, error);
-        }
-      }
-    };
-
-    if (posts.length > 0) {
-      fetchPresets();
+  // Fetch preset data when expanding a post
+  const handleExpandPost = useCallback(async (post: Post) => {
+    // Toggle off if already expanded
+    if (expandedPostId === post.id) {
+      setExpandedPostId(null);
+      return;
     }
-  }, [posts, parsedPresets]);
+
+    setExpandedPostId(post.id);
+
+    // Check if we already have the preset data
+    if (presetData[post.id]) return;
+
+    // Fetch preset if we have a preset_object_key
+    if (!post.preset_object_key) return;
+
+    setPresetLoading(post.id);
+    try {
+      // URL encode the path segments (but not the slashes)
+      const encodedKey = post.preset_object_key
+        .split('/')
+        .map(segment => encodeURIComponent(segment))
+        .join('/');
+      const presetUrl = `${PRESETS_URL}${encodedKey}`;
+      const response = await fetch(presetUrl);
+      if (!response.ok) throw new Error("Failed to fetch preset");
+      
+      const rawPreset: RawVitalPreset = await response.json();
+      const parsed = parseVitalPreset(rawPreset);
+      
+      setPresetData(prev => ({ ...prev, [post.id]: parsed }));
+    } catch (error) {
+      console.error("Error fetching preset:", error);
+      setPresetData(prev => ({ ...prev, [post.id]: null }));
+    } finally {
+      setPresetLoading(null);
+    }
+  }, [expandedPostId, presetData]);
 
   // Handle upvote/downvote via backend API
   const handleVote = async (postId: string, direction: "up" | "down") => {
@@ -356,7 +369,7 @@ export default function BrowsePage() {
                       <audio
                         controls
                         className="w-full h-10 rounded-lg"
-                        src={`${PREVIEWS_BUCKET}/${encodeURIComponent(post.preview_object_key).replace(/%2F/g, '/')}`}
+                        src={`${STORAGE_URL}/${encodeURIComponent(post.preview_object_key).replace(/%2F/g, '/')}`}
                       >
                         Your browser does not support the audio element.
                       </audio>
@@ -423,7 +436,54 @@ export default function BrowsePage() {
                       </svg>
                       <span>Comments</span>
                     </button>
+
+                    {/* View Preset Button */}
+                    {post.preset_object_key && (
+                      <button 
+                        onClick={() => handleExpandPost(post)}
+                        className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 transition ml-auto"
+                      >
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                          />
+                        </svg>
+                        <span>{expandedPostId === post.id ? "Hide Preset" : "View Preset"}</span>
+                        <svg 
+                          className={`h-4 w-4 transition-transform ${expandedPostId === post.id ? "rotate-180" : ""}`} 
+                          fill="none" 
+                          stroke="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
+
+                  {/* Preset Viewer - Expandable */}
+                  {expandedPostId === post.id && (
+                    <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                      {presetLoading === post.id ? (
+                        <div className="flex items-center justify-center py-8">
+                          <div className="text-zinc-500 dark:text-zinc-400">Loading preset...</div>
+                        </div>
+                      ) : presetData[post.id] ? (
+                        <PresetViewer 
+                          preset={presetData[post.id]!} 
+                          presetName={post.title.split(' - ')[0]}
+                          uploadDate={new Date(post.created_at)}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center py-8">
+                          <div className="text-zinc-500 dark:text-zinc-400">Could not load preset data</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </article>
               ))}
             </div>
