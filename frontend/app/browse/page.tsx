@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient, type User } from "@supabase/supabase-js";
+import { PresetViewer, parseVitalPreset, type ParsedPreset } from "../components/PresetViewer";
 
 interface Post {
   id: string;
@@ -17,10 +18,12 @@ interface Post {
     username: string;
   } | null;
   preview_object_key: string | null;
+  preset_object_key: string | null;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 const PREVIEWS_BUCKET = process.env.NEXT_PUBLIC_PREVIEWS_BUCKET || "https://tsgqkjbmcokktrdyyiro.supabase.co/storage/v1/object/public/previews";
+const PRESETS_BUCKET = process.env.NEXT_PUBLIC_PRESETS_BUCKET || "https://tsgqkjbmcokktrdyyiro.supabase.co/storage/v1/object/public/presets";
 
 export default function BrowsePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -30,6 +33,7 @@ export default function BrowsePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [parsedPresets, setParsedPresets] = useState<Record<string, ParsedPreset>>({});
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -85,6 +89,35 @@ export default function BrowsePage() {
 
     fetchPosts();
   }, [searchQuery]);
+
+  // Fetch and parse preset data for posts
+  useEffect(() => {
+    const fetchPresets = async () => {
+      const postsWithPresets = posts.filter(p => p.preset_object_key);
+      
+      for (const post of postsWithPresets) {
+        // Skip if already parsed
+        if (parsedPresets[post.id]) continue;
+        
+        try {
+          const presetUrl = `${PRESETS_BUCKET}/${encodeURIComponent(post.preset_object_key!).replace(/%2F/g, '/')}`;
+          const response = await fetch(presetUrl);
+          if (!response.ok) continue;
+          
+          const rawPreset = await response.json();
+          const parsed = parseVitalPreset(rawPreset);
+          
+          setParsedPresets(prev => ({ ...prev, [post.id]: parsed }));
+        } catch (error) {
+          console.error(`Error fetching preset for post ${post.id}:`, error);
+        }
+      }
+    };
+
+    if (posts.length > 0) {
+      fetchPresets();
+    }
+  }, [posts, parsedPresets]);
 
   // Handle upvote/downvote via backend API
   const handleVote = async (postId: string, direction: "up" | "down") => {
@@ -327,6 +360,17 @@ export default function BrowsePage() {
                       >
                         Your browser does not support the audio element.
                       </audio>
+                    </div>
+                  )}
+
+                  {/* Preset Viewer */}
+                  {parsedPresets[post.id] && (
+                    <div className="mb-4">
+                      <PresetViewer 
+                        preset={parsedPresets[post.id]} 
+                        presetName={post.title}
+                        compact
+                      />
                     </div>
                   )}
 

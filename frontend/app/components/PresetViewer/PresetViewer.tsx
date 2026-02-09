@@ -1,27 +1,121 @@
 'use client';
 
-import { ParsedPreset, EnvelopeInfo } from './types';
+import { useMemo } from 'react';
+import { ParsedPreset, EnvelopeInfo, OscillatorInfo } from './types';
 
-// Usage: 
-// 1. Get the raw preset data (JSON from .vital file or API)
-//      Ex: 
-            // const response = await fetch('http://localhost:8000/api/presets/123');
-            // const rawPreset = await response.json();
-            // const file = event.target.files[0];
-            // const rawPreset = JSON.parse(await file.text());
-// 2. Parse it
-//      Ex:
-            // import { parseVitalPreset } from '../components/PresetViewer';
-            // const parsed = parseVitalPreset(rawPreset);
-// 3. Render the component
-//      Ex:
-            // <PresetViewer 
-            // preset={parsed} 
-            // presetName="A Night in Kalyan"
-            // category="Pad"           // optional
-            // uploadDate={new Date()}  // optional
-            // />
+// Decode base64 wave data to float array
+function decodeWaveData(base64: string): Float32Array | null {
+  try {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return new Float32Array(bytes.buffer);
+  } catch {
+    return null;
+  }
+}
 
+// Mini waveform visualization component
+function WaveformMini({ waveData, enabled }: { waveData?: string; enabled: boolean }) {
+  const pathData = useMemo(() => {
+    if (!waveData) return null;
+    
+    const samples = decodeWaveData(waveData);
+    if (!samples || samples.length === 0) return null;
+    
+    // Downsample for display - take every Nth sample
+    const targetPoints = 64;
+    const step = Math.max(1, Math.floor(samples.length / targetPoints));
+    const points: number[] = [];
+    
+    for (let i = 0; i < samples.length; i += step) {
+      points.push(samples[i]);
+    }
+    
+    // Build SVG path
+    const w = 60;
+    const h = 24;
+    const padding = 2;
+    const usableWidth = w - padding * 2;
+    const usableHeight = h - padding * 2;
+    
+    let path = '';
+    for (let i = 0; i < points.length; i++) {
+      const x = padding + (i / (points.length - 1)) * usableWidth;
+      const y = padding + ((1 - points[i]) / 2) * usableHeight; // Map -1..1 to height
+      path += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
+    }
+    
+    return path;
+  }, [waveData]);
+  
+  if (!pathData) {
+    // Show a simple sine wave placeholder if no data
+    return (
+      <svg width={60} height={24} className="block">
+        <path 
+          d="M 2 12 Q 17 2, 32 12 Q 47 22, 58 12" 
+          fill="none" 
+          stroke={enabled ? "#6b7280" : "#3f3f46"} 
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  
+  return (
+    <svg width={60} height={24} className="block">
+      <path 
+        d={pathData} 
+        fill="none" 
+        stroke={enabled ? "#2dd4bf" : "#3f3f46"} 
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// Oscillator card with waveform
+function OscillatorCard({ osc }: { osc: OscillatorInfo }) {
+  return (
+    <div 
+      className={`flex flex-col p-2.5 rounded-lg border transition-all ${
+        osc.enabled 
+          ? 'bg-zinc-800/80 border-zinc-700' 
+          : 'bg-zinc-800/30 border-zinc-800 opacity-60'
+      }`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className={`text-[10px] font-medium ${osc.enabled ? 'text-zinc-400' : 'text-zinc-600'}`}>
+          OSC {osc.id}
+        </span>
+        <div className={`w-1.5 h-1.5 rounded-full ${osc.enabled ? 'bg-teal-400' : 'bg-zinc-600'}`} />
+      </div>
+      
+      <WaveformMini 
+        waveData={osc.wavetable?.waveData} 
+        enabled={osc.enabled} 
+      />
+      
+      <span className={`mt-2 text-[11px] truncate ${
+        osc.enabled ? 'text-zinc-200' : 'text-zinc-500'
+      }`} title={osc.wavetableName}>
+        {osc.wavetableName}
+      </span>
+      
+      {osc.wavetable?.componentType && osc.wavetable.componentType !== 'Wave Source' && (
+        <span className="text-[9px] text-zinc-500 truncate">
+          {osc.wavetable.componentType.replace('Audio File Source', 'Sample').replace('Wave Warp', '+Warp')}
+        </span>
+      )}
+    </div>
+  );
+}
 
 // Compact ADSR Graph - simplified for readability
 function MiniEnvelope({ envelope }: { envelope: EnvelopeInfo }) {
@@ -75,21 +169,22 @@ interface PresetViewerProps {
   presetName?: string;
   category?: string;
   uploadDate?: Date;
+  compact?: boolean; // For embedding in posts
 }
 
-export default function PresetViewer({ preset, presetName, category, uploadDate }: PresetViewerProps) {
+export default function PresetViewer({ preset, presetName, category, uploadDate, compact = false }: PresetViewerProps) {
   const activeEffects = preset.effects.filter(e => e.enabled);
   
   const cat = category?.toLowerCase() || 'other';
   const categoryStyle = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
 
   return (
-    <div className="w-full max-w-lg bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden font-sans">
+    <div className={`w-full bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden font-sans ${compact ? '' : 'max-w-lg'}`}>
       {/* Header - Title, Category, Date */}
-      <div className="p-5 border-b border-zinc-800 pr-14">
+      <div className={`border-b border-zinc-800 ${compact ? 'p-4' : 'p-5 pr-14'}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-semibold text-white truncate">
+            <h2 className={`font-semibold text-white truncate ${compact ? 'text-base' : 'text-lg'}`}>
               {presetName || 'Untitled Preset'}
             </h2>
             <p className="text-sm text-zinc-500 mt-1">by {preset.author}</p>
@@ -104,31 +199,21 @@ export default function PresetViewer({ preset, presetName, category, uploadDate 
       </div>
 
       {/* Compact Info Grid */}
-      <div className="p-5 space-y-4">
-        {/* Wavetables - Show oscillator wavetable names */}
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-zinc-500 w-16">Wavetables</span>
-          <div className="flex gap-2">
+      <div className={`space-y-4 ${compact ? 'p-4' : 'p-5'}`}>
+        {/* Oscillators with Waveforms */}
+        <div>
+          <span className="text-xs text-zinc-500 mb-2 block">Oscillators</span>
+          <div className="grid grid-cols-3 gap-2">
             {preset.oscillators.map((osc) => (
-              <div 
-                key={osc.id}
-                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg ${
-                  osc.enabled ? 'bg-zinc-800' : 'bg-zinc-800/50 opacity-50'
-                }`}
-              >
-                <span className="text-[10px] text-zinc-500">OSC{osc.id}</span>
-                <span className={`text-[11px] ${osc.enabled ? 'text-zinc-200' : 'text-zinc-500'}`}>
-                  {osc.wavetableName}
-                </span>
-              </div>
+              <OscillatorCard key={osc.id} osc={osc} />
             ))}
           </div>
         </div>
 
         {/* Envelopes - Mini visual */}
         <div className="flex items-center gap-4">
-          <span className="text-xs text-zinc-500 w-16">Envelopes</span>
-          <div className="flex gap-3">
+          <span className="text-xs text-zinc-500 w-16 shrink-0">Envelopes</span>
+          <div className="flex gap-3 flex-wrap">
             <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-800 rounded-lg">
               <span className="text-[11px] text-zinc-400">Amp</span>
               <MiniEnvelope envelope={preset.envelopes[0]} />
@@ -142,7 +227,7 @@ export default function PresetViewer({ preset, presetName, category, uploadDate 
 
         {/* Effects - Simple chips */}
         <div className="flex items-center gap-4">
-          <span className="text-xs text-zinc-500 w-16">Effects</span>
+          <span className="text-xs text-zinc-500 w-16 shrink-0">Effects</span>
           <div className="flex flex-wrap gap-1.5">
             {activeEffects.length > 0 ? (
               activeEffects.map((fx) => (
@@ -156,7 +241,7 @@ export default function PresetViewer({ preset, presetName, category, uploadDate 
 
         {/* Macros - Simple list */}
         <div className="flex items-center gap-4">
-          <span className="text-xs text-zinc-500 w-16">Macros</span>
+          <span className="text-xs text-zinc-500 w-16 shrink-0">Macros</span>
           <div className="flex flex-wrap gap-1.5">
             {preset.macros.filter(m => m.name).map((macro) => (
               <Chip key={macro.id}>{macro.name}</Chip>
@@ -167,7 +252,7 @@ export default function PresetViewer({ preset, presetName, category, uploadDate 
 
       {/* Footer */}
       {preset.comments && (
-        <div className="px-5 py-3 border-t border-zinc-800">
+        <div className={`border-t border-zinc-800 ${compact ? 'px-4 py-2' : 'px-5 py-3'}`}>
           <p className="text-xs text-zinc-500 italic line-clamp-2">{preset.comments}</p>
         </div>
       )}

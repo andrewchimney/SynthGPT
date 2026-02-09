@@ -1,9 +1,17 @@
 // Types for parsed Vital preset data
 
+export interface WavetableInfo {
+  name: string;
+  author?: string;
+  waveData?: string; // Base64-encoded waveform data
+  componentType?: string; // 'Wave Source', 'Audio File Source', etc.
+}
+
 export interface OscillatorInfo {
   id: number;
   enabled: boolean;
   wavetableName: string;
+  wavetable?: WavetableInfo;
   level: number;
   transpose: number;
   spectralMorphType: string;

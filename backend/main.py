@@ -185,7 +185,8 @@ async def get_posts(search: Optional[str] = Query(None)):
             p.created_at,
             p.votes,
             u.username as author_username,
-            pr.preview_object_key
+            pr.preview_object_key,
+            pr.preset_object_key
         FROM posts p
         LEFT JOIN users u ON p.owner_user_id = u.id
         LEFT JOIN presets pr ON p.preset_id = pr.id
@@ -216,6 +217,7 @@ async def get_posts(search: Optional[str] = Query(None)):
                     "username": r["author_username"]
                 } if r["author_username"] else None,
                 "preview_object_key": r["preview_object_key"],
+                "preset_object_key": r["preset_object_key"],
             }
             for r in rows
         ]
