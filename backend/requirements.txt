@@ -4,6 +4,8 @@ minio
 pgvector
 python-dotenv
 python-multipart
-#vita 
+vita
+scipy
+numpy
 psycopg2-binary
 asyncpg
