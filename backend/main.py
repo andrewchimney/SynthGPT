@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 
 import laion_clap
 
@@ -18,6 +19,9 @@ import laion_clap
 from rag.retrieve import router as retrieve_router
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+PRESETS_BUCKET = os.getenv("PRESETS_BUCKET")
+PREVIEWS_BUCKET = os.getenv("PREVIEWS_BUCKET")
 
 
 def load_model():
@@ -167,6 +171,47 @@ async def get_user_id(id: str):
 # 	•	POST /api/generate
 
 
+# ==================== PRESET DATA API ====================
+
+@app.get("/api/presets/{preset_id}/data")
+async def get_preset_data(preset_id: str):
+    """Fetch the .vital preset JSON data from Supabase storage"""
+    conn = await asyncpg.connect(DATABASE_URL)
+    
+    # Get the preset_object_key from the database
+    row = await conn.fetchrow("""
+        SELECT preset_object_key FROM presets WHERE id = $1
+    """, preset_id)
+    
+    await conn.close()
+    
+    if not row or not row["preset_object_key"]:
+        raise HTTPException(status_code=404, detail="Preset not found")
+    
+    preset_object_key = row["preset_object_key"]
+    
+    # Fetch the preset file from Supabase storage
+    preset_url = f"{PRESETS_BUCKET}/{preset_object_key}"
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(preset_url)
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code, 
+                detail=f"Failed to fetch preset from storage: {response.status_code}"
+            )
+        
+        return response.json()
+
+
+def get_preview_url(preview_object_key: str | None) -> str | None:
+    """Build the full preview URL from the object key"""
+    if not preview_object_key or not PREVIEWS_BUCKET:
+        return None
+    return f"{PREVIEWS_BUCKET}/{preview_object_key}"
+
+
 # ==================== POSTS API ====================
 
 @app.get("/api/posts")
@@ -216,8 +261,7 @@ async def get_posts(search: Optional[str] = Query(None)):
                 "author": {
                     "username": r["author_username"]
                 } if r["author_username"] else None,
-                "preview_object_key": r["preview_object_key"],
-                "preset_object_key": r["preset_object_key"],
+                "preview_url": get_preview_url(r["preview_object_key"]),
             }
             for r in rows
         ]

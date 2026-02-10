@@ -3,88 +3,13 @@
 import { useMemo } from 'react';
 import { ParsedPreset, EnvelopeInfo, OscillatorInfo } from './types';
 
-// Decode base64 wave data to float array
-function decodeWaveData(base64: string): Float32Array | null {
-  try {
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return new Float32Array(bytes.buffer);
-  } catch {
-    return null;
-  }
-}
-
-// Mini waveform visualization component
-function WaveformMini({ waveData, enabled }: { waveData?: string; enabled: boolean }) {
-  const pathData = useMemo(() => {
-    if (!waveData) return null;
-    
-    const samples = decodeWaveData(waveData);
-    if (!samples || samples.length === 0) return null;
-    
-    // Downsample for display - take every Nth sample
-    const targetPoints = 64;
-    const step = Math.max(1, Math.floor(samples.length / targetPoints));
-    const points: number[] = [];
-    
-    for (let i = 0; i < samples.length; i += step) {
-      points.push(samples[i]);
-    }
-    
-    // Build SVG path
-    const w = 60;
-    const h = 24;
-    const padding = 2;
-    const usableWidth = w - padding * 2;
-    const usableHeight = h - padding * 2;
-    
-    let path = '';
-    for (let i = 0; i < points.length; i++) {
-      const x = padding + (i / (points.length - 1)) * usableWidth;
-      const y = padding + ((1 - points[i]) / 2) * usableHeight; // Map -1..1 to height
-      path += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
-    }
-    
-    return path;
-  }, [waveData]);
-  
-  if (!pathData) {
-    // Show a simple sine wave placeholder if no data
-    return (
-      <svg width={60} height={24} className="block">
-        <path 
-          d="M 2 12 Q 17 2, 32 12 Q 47 22, 58 12" 
-          fill="none" 
-          stroke={enabled ? "#6b7280" : "#3f3f46"} 
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    );
-  }
-  
-  return (
-    <svg width={60} height={24} className="block">
-      <path 
-        d={pathData} 
-        fill="none" 
-        stroke={enabled ? "#2dd4bf" : "#3f3f46"} 
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 // Oscillator card with waveform
-function OscillatorCard({ osc }: { osc: OscillatorInfo }) {
+function OscillatorCard({ osc, compact = false }: { osc: OscillatorInfo; compact?: boolean }) {
   return (
     <div 
-      className={`flex flex-col p-2.5 rounded-lg border transition-all ${
+      className={`flex flex-col rounded-lg border transition-all flex-1 min-w-0 ${
+        compact ? 'p-2' : 'p-2.5'
+      } ${
         osc.enabled 
           ? 'bg-zinc-800/80 border-zinc-700' 
           : 'bg-zinc-800/30 border-zinc-800 opacity-60'
@@ -97,10 +22,13 @@ function OscillatorCard({ osc }: { osc: OscillatorInfo }) {
         <div className={`w-1.5 h-1.5 rounded-full ${osc.enabled ? 'bg-teal-400' : 'bg-zinc-600'}`} />
       </div>
       
-      <WaveformMini 
-        waveData={osc.wavetable?.waveData} 
-        enabled={osc.enabled} 
-      />
+      <div className="flex justify-center">
+        <WaveformMini 
+          waveData={osc.wavetable?.waveData} 
+          enabled={osc.enabled}
+          compact={compact}
+        />
+      </div>
       
       <span className={`mt-2 text-[11px] truncate ${
         osc.enabled ? 'text-zinc-200' : 'text-zinc-500'
@@ -117,9 +45,89 @@ function OscillatorCard({ osc }: { osc: OscillatorInfo }) {
   );
 }
 
+// Decode base64 wave data to float array
+function decodeWaveData(base64: string): Float32Array | null {
+  try {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return new Float32Array(bytes.buffer);
+  } catch {
+    return null;
+  }
+}
+
+// Mini waveform visualization component
+function WaveformMini({ waveData, enabled, compact = false }: { waveData?: string; enabled: boolean; compact?: boolean }) {
+  const w = compact ? 50 : 60;
+  const h = compact ? 20 : 24;
+  
+  const pathData = useMemo(() => {
+    if (!waveData) return null;
+    
+    const samples = decodeWaveData(waveData);
+    if (!samples || samples.length === 0) return null;
+    
+    // Downsample for display - take every Nth sample
+    const targetPoints = 64;
+    const step = Math.max(1, Math.floor(samples.length / targetPoints));
+    const points: number[] = [];
+    
+    for (let i = 0; i < samples.length; i += step) {
+      points.push(samples[i]);
+    }
+    
+    // Build SVG path
+    const padding = 2;
+    const usableWidth = w - padding * 2;
+    const usableHeight = h - padding * 2;
+    
+    let path = '';
+    for (let i = 0; i < points.length; i++) {
+      const x = padding + (i / (points.length - 1)) * usableWidth;
+      const y = padding + ((1 - points[i]) / 2) * usableHeight; // Map -1..1 to height
+      path += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
+    }
+    
+    return path;
+  }, [waveData, w, h]);
+  
+  if (!pathData) {
+    // Show a simple sine wave placeholder if no data
+    const midY = h / 2;
+    const q1x = w * 0.28, q2x = w * 0.78;
+    return (
+      <svg width={w} height={h} className="block">
+        <path 
+          d={`M 2 ${midY} Q ${q1x} 2, ${w/2} ${midY} Q ${q2x} ${h-2}, ${w-2} ${midY}`}
+          fill="none" 
+          stroke={enabled ? "#6b7280" : "#3f3f46"} 
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  
+  return (
+    <svg width={w} height={h} className="block">
+      <path 
+        d={pathData} 
+        fill="none" 
+        stroke={enabled ? "#2dd4bf" : "#3f3f46"} 
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 // Compact ADSR Graph - simplified for readability
-function MiniEnvelope({ envelope }: { envelope: EnvelopeInfo }) {
-  const w = 80, h = 32, p = 2;
+function MiniEnvelope({ envelope, compact = false }: { envelope: EnvelopeInfo; compact?: boolean }) {
+  const w = compact ? 60 : 80, h = compact ? 24 : 32, p = 2;
   const maxT = 2;
   const ax = p + Math.min(envelope.attack / maxT, 0.35) * (w - p * 2);
   const dx = ax + Math.min(envelope.decay / maxT, 0.25) * (w - p * 2);
@@ -179,9 +187,9 @@ export default function PresetViewer({ preset, presetName, category, uploadDate,
   const categoryStyle = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
 
   return (
-    <div className={`w-full bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden font-sans ${compact ? '' : 'max-w-lg'}`}>
+    <div className={`w-full bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden font-sans ${compact ? 'flex-1' : 'max-w-lg'}`}>
       {/* Header - Title, Category, Date */}
-      <div className={`border-b border-zinc-800 ${compact ? 'p-4' : 'p-5 pr-14'}`}>
+      <div className={`border-b border-zinc-800 ${compact ? 'px-4 py-3' : 'p-5 pr-14'}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <h2 className={`font-semibold text-white truncate ${compact ? 'text-base' : 'text-lg'}`}>
@@ -199,36 +207,36 @@ export default function PresetViewer({ preset, presetName, category, uploadDate,
       </div>
 
       {/* Compact Info Grid */}
-      <div className={`space-y-4 ${compact ? 'p-4' : 'p-5'}`}>
+      <div className={compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}>
         {/* Oscillators with Waveforms */}
         <div>
           <span className="text-xs text-zinc-500 mb-2 block">Oscillators</span>
-          <div className="grid grid-cols-3 gap-2">
+          <div className={`grid gap-2 ${compact ? 'grid-cols-3' : 'grid-cols-3'}`}>
             {preset.oscillators.map((osc) => (
-              <OscillatorCard key={osc.id} osc={osc} />
+              <OscillatorCard key={osc.id} osc={osc} compact={compact} />
             ))}
           </div>
         </div>
 
         {/* Envelopes - Mini visual */}
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-zinc-500 w-16 shrink-0">Envelopes</span>
-          <div className="flex gap-3 flex-wrap">
+        <div className={compact ? 'flex flex-wrap items-start gap-2' : 'flex items-center gap-4'}>
+          <span className={`text-xs text-zinc-500 ${compact ? 'w-full mb-1' : 'w-16 shrink-0'}`}>Envelopes</span>
+          <div className="flex gap-2 flex-wrap flex-1">
             <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-800 rounded-lg">
               <span className="text-[11px] text-zinc-400">Amp</span>
-              <MiniEnvelope envelope={preset.envelopes[0]} />
+              <MiniEnvelope envelope={preset.envelopes[0]} compact={compact} />
             </div>
             <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-800 rounded-lg">
               <span className="text-[11px] text-zinc-400">Mod</span>
-              <MiniEnvelope envelope={preset.envelopes[1]} />
+              <MiniEnvelope envelope={preset.envelopes[1]} compact={compact} />
             </div>
           </div>
         </div>
 
         {/* Effects - Simple chips */}
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-zinc-500 w-16 shrink-0">Effects</span>
-          <div className="flex flex-wrap gap-1.5">
+        <div className={compact ? 'flex flex-wrap items-start gap-2' : 'flex items-center gap-4'}>
+          <span className={`text-xs text-zinc-500 ${compact ? 'w-full mb-1' : 'w-16 shrink-0'}`}>Effects</span>
+          <div className="flex flex-wrap gap-1.5 flex-1">
             {activeEffects.length > 0 ? (
               activeEffects.map((fx) => (
                 <Chip key={fx.name}>{fx.name}</Chip>
@@ -240,9 +248,9 @@ export default function PresetViewer({ preset, presetName, category, uploadDate,
         </div>
 
         {/* Macros - Simple list */}
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-zinc-500 w-16 shrink-0">Macros</span>
-          <div className="flex flex-wrap gap-1.5">
+        <div className={compact ? 'flex flex-wrap items-start gap-2' : 'flex items-center gap-4'}>
+          <span className={`text-xs text-zinc-500 ${compact ? 'w-full mb-1' : 'w-16 shrink-0'}`}>Macros</span>
+          <div className="flex flex-wrap gap-1.5 flex-1">
             {preset.macros.filter(m => m.name).map((macro) => (
               <Chip key={macro.id}>{macro.name}</Chip>
             ))}

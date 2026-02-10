@@ -17,13 +17,10 @@ interface Post {
   author?: {
     username: string;
   } | null;
-  preview_object_key: string | null;
-  preset_object_key: string | null;
+  preview_url: string | null;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
-const STORAGE_URL = process.env.NEXT_PUBLIC_STORAGE_URL || process.env.NEXT_PUBLIC_PREVIEWS_BUCKET;
-const PRESETS_URL = process.env.NEXT_PUBLIC_PRESETS_URL || process.env.NEXT_PUBLIC_PRESETS_BUCKET;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 export default function BrowsePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -106,19 +103,17 @@ export default function BrowsePage() {
     // Check if we already have the preset data
     if (presetData[post.id]) return;
 
-    // Fetch preset if we have a preset_object_key
-    if (!post.preset_object_key) return;
+    // Fetch preset if we have a preset_id
+    if (!post.preset_id) return;
 
     setPresetLoading(post.id);
     try {
-      // URL encode the path segments (but not the slashes)
-      const encodedKey = post.preset_object_key
-        .split('/')
-        .map(segment => encodeURIComponent(segment))
-        .join('/');
-      const presetUrl = `${PRESETS_URL}${encodedKey}`;
-      const response = await fetch(presetUrl);
-      if (!response.ok) throw new Error("Failed to fetch preset");
+      // Use backend API to fetch preset data
+      const response = await fetch(`${API_URL}/presets/${post.preset_id}/data`);
+      if (!response.ok) {
+        console.error("Preset fetch failed:", response.status, response.statusText);
+        throw new Error("Failed to fetch preset");
+      }
       
       const rawPreset: RawVitalPreset = await response.json();
       const parsed = parseVitalPreset(rawPreset);
@@ -364,12 +359,12 @@ export default function BrowsePage() {
                   )}
 
                   {/* Audio Player - from preset's preview */}
-                  {post.preview_object_key && (
+                  {post.preview_url && (
                     <div className="mb-4">
                       <audio
                         controls
                         className="w-full h-10 rounded-lg"
-                        src={`${STORAGE_URL}/${encodeURIComponent(post.preview_object_key).replace(/%2F/g, '/')}`}
+                        src={post.preview_url}
                       >
                         Your browser does not support the audio element.
                       </audio>
@@ -438,7 +433,7 @@ export default function BrowsePage() {
                     </button>
 
                     {/* View Preset Button */}
-                    {post.preset_object_key && (
+                    {post.preset_id && (
                       <button 
                         onClick={() => handleExpandPost(post)}
                         className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 transition ml-auto"

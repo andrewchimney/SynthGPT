@@ -86,6 +86,7 @@ function parseOscillators(settings: Record<string, unknown>): OscillatorInfo[] {
   const oscillators: OscillatorInfo[] = [];
   
   // Wavetables are stored in settings.wavetables
+  // Wavetables are stored in settings.wavetables, not at the top level
   const wavetables = (settings.wavetables as RawWavetable[]) || [];
 
   for (let i = 1; i <= 3; i++) {
@@ -109,7 +110,12 @@ function parseOscillators(settings: Record<string, unknown>): OscillatorInfo[] {
       id: i,
       enabled,
       wavetableName,
-      wavetable: wavetableInfo,
+      wavetable: wavetable ? {
+        name: wavetableName,
+        author: wavetable.author,
+        waveData,
+        componentType,
+      } : undefined,
       level: Math.round(getNum(settings, `${prefix}level`) * 100),
       transpose: getNum(settings, `${prefix}transpose`),
       spectralMorphType: SPECTRAL_MORPH_TYPES[getNum(settings, `${prefix}spectral_morph_type`)] || 'None',
