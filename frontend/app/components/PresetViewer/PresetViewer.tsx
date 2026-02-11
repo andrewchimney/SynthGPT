@@ -7,22 +7,20 @@ import { ParsedPreset, EnvelopeInfo, OscillatorInfo } from './types';
 function OscillatorCard({ osc, compact = false }: { osc: OscillatorInfo; compact?: boolean }) {
   return (
     <div 
-      className={`flex flex-col rounded-lg border transition-all flex-1 min-w-0 ${
-        compact ? 'p-2' : 'p-2.5'
-      } ${
+      className={`flex flex-col p-4 rounded-lg border transition-all ${
         osc.enabled 
           ? 'bg-zinc-800/80 border-zinc-700' 
           : 'bg-zinc-800/30 border-zinc-800 opacity-60'
       }`}
     >
-      <div className="flex items-center justify-between mb-2">
-        <span className={`text-[10px] font-medium ${osc.enabled ? 'text-zinc-400' : 'text-zinc-600'}`}>
+      <div className="flex items-center justify-between mb-3">
+        <span className={`text-xs font-medium ${osc.enabled ? 'text-zinc-400' : 'text-zinc-600'}`}>
           OSC {osc.id}
         </span>
-        <div className={`w-1.5 h-1.5 rounded-full ${osc.enabled ? 'bg-teal-400' : 'bg-zinc-600'}`} />
+        <div className={`w-2 h-2 rounded-full ${osc.enabled ? 'bg-teal-400' : 'bg-zinc-600'}`} />
       </div>
       
-      <div className="flex justify-center">
+      <div className="w-full mb-3">
         <WaveformMini 
           waveData={osc.wavetable?.waveData} 
           enabled={osc.enabled}
@@ -30,14 +28,14 @@ function OscillatorCard({ osc, compact = false }: { osc: OscillatorInfo; compact
         />
       </div>
       
-      <span className={`mt-2 text-[11px] truncate ${
+      <span className={`text-xs truncate ${
         osc.enabled ? 'text-zinc-200' : 'text-zinc-500'
       }`} title={osc.wavetableName}>
         {osc.wavetableName}
       </span>
       
       {osc.wavetable?.componentType && osc.wavetable.componentType !== 'Wave Source' && (
-        <span className="text-[9px] text-zinc-500 truncate">
+        <span className="text-[10px] text-zinc-500 truncate mt-1">
           {osc.wavetable.componentType.replace('Audio File Source', 'Sample').replace('Wave Warp', '+Warp')}
         </span>
       )}
@@ -61,8 +59,9 @@ function decodeWaveData(base64: string): Float32Array | null {
 
 // Mini waveform visualization component
 function WaveformMini({ waveData, enabled, compact = false }: { waveData?: string; enabled: boolean; compact?: boolean }) {
-  const w = compact ? 50 : 60;
-  const h = compact ? 20 : 24;
+  // Use viewBox for responsive scaling
+  const w = 100;
+  const h = 40;
   
   const pathData = useMemo(() => {
     if (!waveData) return null;
@@ -99,7 +98,7 @@ function WaveformMini({ waveData, enabled, compact = false }: { waveData?: strin
     const midY = h / 2;
     const q1x = w * 0.28, q2x = w * 0.78;
     return (
-      <svg width={w} height={h} className="block">
+      <svg viewBox={`0 0 ${w} ${h}`} className="block w-full h-10" preserveAspectRatio="xMidYMid meet">
         <path 
           d={`M 2 ${midY} Q ${q1x} 2, ${w/2} ${midY} Q ${q2x} ${h-2}, ${w-2} ${midY}`}
           fill="none" 
@@ -112,7 +111,7 @@ function WaveformMini({ waveData, enabled, compact = false }: { waveData?: strin
   }
   
   return (
-    <svg width={w} height={h} className="block">
+    <svg viewBox={`0 0 ${w} ${h}`} className="block w-full h-10" preserveAspectRatio="xMidYMid meet">
       <path 
         d={pathData} 
         fill="none" 
@@ -127,7 +126,7 @@ function WaveformMini({ waveData, enabled, compact = false }: { waveData?: strin
 
 // Compact ADSR Graph - simplified for readability
 function MiniEnvelope({ envelope, compact = false }: { envelope: EnvelopeInfo; compact?: boolean }) {
-  const w = compact ? 60 : 80, h = compact ? 24 : 32, p = 2;
+  const w = 80, h = 32, p = 2;
   const maxT = 2;
   const ax = p + Math.min(envelope.attack / maxT, 0.35) * (w - p * 2);
   const dx = ax + Math.min(envelope.decay / maxT, 0.25) * (w - p * 2);
@@ -187,9 +186,9 @@ export default function PresetViewer({ preset, presetName, category, uploadDate,
   const categoryStyle = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
 
   return (
-    <div className={`w-full bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden font-sans ${compact ? 'flex-1' : 'max-w-lg'}`}>
+    <div className="w-full bg-zinc-900 rounded-xl border border-zinc-700 overflow-hidden font-sans">
       {/* Header - Title, Category, Date */}
-      <div className={`border-b border-zinc-800 ${compact ? 'px-4 py-3' : 'p-5 pr-14'}`}>
+      <div className={`border-b border-zinc-800 ${compact ? 'px-5 py-4' : 'p-5 pr-14'}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <h2 className={`font-semibold text-white truncate ${compact ? 'text-base' : 'text-lg'}`}>
@@ -207,11 +206,11 @@ export default function PresetViewer({ preset, presetName, category, uploadDate,
       </div>
 
       {/* Compact Info Grid */}
-      <div className={compact ? 'p-4 space-y-3' : 'p-5 space-y-4'}>
+      <div className={compact ? 'p-5 space-y-4' : 'p-5 space-y-4'}>
         {/* Oscillators with Waveforms */}
         <div>
-          <span className="text-xs text-zinc-500 mb-2 block">Oscillators</span>
-          <div className={`grid gap-2 ${compact ? 'grid-cols-3' : 'grid-cols-3'}`}>
+          <span className="text-xs text-zinc-500 mb-3 block">Oscillators</span>
+          <div className="grid grid-cols-3 gap-3">
             {preset.oscillators.map((osc) => (
               <OscillatorCard key={osc.id} osc={osc} compact={compact} />
             ))}
