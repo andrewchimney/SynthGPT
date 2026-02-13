@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient, type User } from "@supabase/supabase-js";
-
+import { useRouter } from "next/navigation";
 interface Post {
   id: string;
   title: string;
@@ -32,6 +33,9 @@ export default function BrowsePage() {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  const router = useRouter();
+
 
   // Supabase client for auth only
   const supabase = useMemo(() => {
@@ -150,9 +154,9 @@ export default function BrowsePage() {
       {/* Navbar */}
       <nav className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-black">
         {/* Logo/Brand */}
-        <div className="text-xl font-semibold text-black dark:text-white">
+        <Link href="/" className="text-xl font-semibold text-black dark:text-white hover:opacity-80 transition">
           Resonance
-        </div>
+        </Link>
         
         {/* Search Box */}
         <div className="flex-1 mx-8 max-w-2xl">
@@ -167,9 +171,9 @@ export default function BrowsePage() {
         
         {/* Generate and Profile */}
         <div className="relative flex items-center gap-6">
-          <button className="text-sm font-medium text-black transition-colors hover:text-zinc-600 hover:underline dark:text-white dark:hover:text-zinc-300 cursor-pointer">
+          <Link href="/generate" className="text-sm font-medium text-black transition-colors hover:text-zinc-600 hover:underline dark:text-white dark:hover:text-zinc-300 cursor-pointer">
             Generate
-          </button>
+          </Link>
           {user ? (
             <button
               aria-label="Profile"
@@ -218,20 +222,23 @@ export default function BrowsePage() {
                       Close
                     </button>
                   </div>
-
-                  {user ? (
-                    <div className="space-y-3">
-                      <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-100">
-                        Signed in as <span className="font-medium">{user.email}</span>
-                      </div>
-                      <button
-                        onClick={handleSignOut}
-                        className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-                      >
+                    {user ? (
+                   <div className="space-y-3">
+                  <button
+                    onClick={() => router.push("/profile")}
+                      className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 text-left hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 w-full"
+                    >
+                    Signed in as <span className="font-medium">{user.email}</span>
+                    </button>
+                    <button
+                    onClick={handleSignOut}
+                  className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+                          >
                         Sign out
                       </button>
                     </div>
                   ) : (
+
                     <div className="space-y-3">
                       <div className="text-sm text-zinc-700 dark:text-zinc-200">Sign in to continue</div>
                       <button

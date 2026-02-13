@@ -1,8 +1,19 @@
 "use client";
 
+<<<<<<< HEAD
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
+=======
+from contextlib import asynccontextmanager
+import os
+import asyncpg
+from typing import Optional
+from pydantic import BaseModel
+from fastapi import FastAPI, Query
+from dotenv import load_dotenv 
+load_dotenv()
+>>>>>>> f6278b350b67673fc01dd076568b270e49fe8dab
 
 interface HistoryData {
   id: string;
