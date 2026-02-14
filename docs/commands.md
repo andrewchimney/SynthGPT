@@ -28,3 +28,7 @@ curl -X POST "http://localhost:8000/api/retrieve" \
     "query": "bright plucky lead",
     "k": 5
   }'
+
+
+ssh -i synth.key opc@170.9.30.159
+systemctl status ollama

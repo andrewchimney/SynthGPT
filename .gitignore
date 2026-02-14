@@ -26,3 +26,5 @@ __pycache__/
 .wav
 .zip
 .7z
+.pub
+.key
