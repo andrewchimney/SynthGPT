@@ -170,16 +170,16 @@ export default function GeneratePage() {
   }, [messages]);
 
   return (
-    <div className="flex h-screen flex-col bg-zinc-50 font-sans dark:bg-black overflow-hidden">
+    <div className="flex min-h-screen flex-col overflow-x-hidden bg-zinc-50 font-sans dark:bg-black">
       {/* Navbar */}
-      <nav className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-black">
+      <nav className="flex flex-wrap items-center gap-3 border-b border-zinc-200 bg-white px-4 py-3 sm:flex-nowrap sm:justify-between sm:gap-4 sm:px-6 sm:py-4 dark:border-zinc-800 dark:bg-black">
         {/* Logo/Brand */}
         <Link href="/" className="text-xl font-semibold text-black dark:text-white hover:opacity-80 transition">
           Resonance
         </Link>
         
         {/* Search Box */}
-        <div className="flex-1 mx-8 max-w-2xl">
+        <div className="order-3 w-full sm:order-2 sm:mx-6 sm:block sm:max-w-2xl sm:flex-1">
           <input
             type="text"
             placeholder="Search..."
@@ -188,7 +188,7 @@ export default function GeneratePage() {
         </div>
         
         {/* Browse and Profile */}
-        <div className="relative flex items-center gap-6">
+        <div className="relative order-2 ml-auto flex items-center gap-4 sm:order-3 sm:ml-0 sm:gap-6">
           <Link href="/browse" className="text-sm font-medium text-black transition-colors hover:text-zinc-600 hover:underline dark:text-white dark:hover:text-zinc-300 cursor-pointer">
             Browse
           </Link>
@@ -222,7 +222,7 @@ export default function GeneratePage() {
           )}
 
           {showAuthPanel && (
-            <div className="fixed right-6 top-16 z-50 w-80 rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl shadow-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="fixed left-3 right-3 top-16 z-50 rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl shadow-zinc-900/10 sm:left-auto sm:right-6 sm:w-80 dark:border-zinc-800 dark:bg-zinc-900">
               {!supabase && (
                 <div className="text-sm text-red-600 dark:text-red-400">
                   Supabase env vars missing. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
@@ -275,11 +275,11 @@ export default function GeneratePage() {
       </nav>
 
       {/* Main Content */}
-      <main className="flex flex-1 w-full items-start justify-center bg-white dark:bg-black pt-8 overflow-hidden" style={{ minWidth: '1400px' }}>
+      <main className="flex w-full flex-1 items-start justify-center gap-4 overflow-hidden bg-white px-4 pt-6 sm:px-6 sm:pt-8 dark:bg-black lg:gap-8">
         {/* Left Robot Image */}
-        <div className="flex justify-end h-full" style={{ width: '300px', marginRight: '80px' }}>
+        <div className="hidden h-full justify-end lg:flex" style={{ width: '260px' }}>
           <div className="pt-16">
-          <div className="flex justify-end pr-20">
+          <div className="flex justify-end pr-8 xl:pr-20">
           <Image
             className="dark:invert scale-y-[-4.5]"
             src="/robot-black.svg"
@@ -289,7 +289,7 @@ export default function GeneratePage() {
             priority
           />
           </div>
-          <div className="flex justify-end pr-20">
+          <div className="flex justify-end pr-8 xl:pr-20">
           <Image
             className="dark:invert scale-y-[4.5]"
             src="/robot-black.svg"
@@ -303,11 +303,11 @@ export default function GeneratePage() {
         </div>
         
         {/* Center Content */}
-        <div className="flex flex-col w-full" style={{ maxWidth: '600px' }}>
+        <div className="flex min-w-0 w-full max-w-2xl flex-col">
           {!showChat ? (
             // Initial hero view
-            <div className="flex flex-col items-center gap-8 text-center">
-              <h1 className="text-7xl font-semibold tracking-tight text-black dark:text-zinc-50">
+            <div className="flex flex-col items-center gap-6 text-center sm:gap-8">
+              <h1 className="text-4xl font-semibold tracking-tight text-black sm:text-6xl md:text-7xl dark:text-zinc-50">
                 Resonance
               </h1>
               <form onSubmit={handleSubmit} className="w-full">
@@ -322,7 +322,7 @@ export default function GeneratePage() {
             </div>
           ) : (
             // Chat view
-            <div className="flex flex-col h-full" style={{ height: 'calc(100vh - 140px)' }}>
+            <div className="flex h-full min-h-0 flex-col" style={{ height: 'calc(100vh - 170px)' }}>
               {/* Messages container */}
               <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
                 {messages.map((message, index) => (
@@ -331,7 +331,7 @@ export default function GeneratePage() {
                     className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     {message.isLoading ? (
-                      <div className="rounded-lg bg-white border border-black px-4 py-2 text-black dark:bg-black dark:border-white dark:text-white max-w-[80%]">
+                      <div className="max-w-[92%] rounded-lg border border-black bg-white px-4 py-2 text-black sm:max-w-[80%] dark:border-white dark:bg-black dark:text-white">
                         <div className="flex gap-1 items-center">
                           <div className="bouncing-dot" style={{ animationDelay: '0s' }}></div>
                           <div className="bouncing-dot" style={{ animationDelay: '0.2s' }}></div>
@@ -340,7 +340,7 @@ export default function GeneratePage() {
                       </div>
                     ) : (
                       <div
-                        className={`rounded-lg px-4 py-2 max-w-[80%] border ${
+                        className={`max-w-[92%] rounded-lg border px-4 py-2 sm:max-w-[80%] ${
                           message.role === "user"
                             ? "bg-black text-white border-white dark:bg-white dark:text-black dark:border-black"
                             : "bg-white text-black border-black dark:bg-black dark:text-white dark:border-white"
@@ -415,7 +415,7 @@ export default function GeneratePage() {
                 <button
                   type="submit"
                   disabled={!inputValue.trim()}
-                  className="rounded-xl bg-white border border-zinc-300 px-6 py-3 text-base font-medium text-black transition hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-zinc-800 dark:border-zinc-700 dark:text-white dark:hover:bg-zinc-700"
+                  className="rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-medium text-black transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-6 sm:text-base dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700"
                 >
                   Send
                 </button>
@@ -425,9 +425,9 @@ export default function GeneratePage() {
         </div>
 
         {/* Right Robot Image (Mirrored) */}
-        <div className="flex justify-start h-full" style={{ width: '300px', marginLeft: '80px' }}>
+        <div className="hidden h-full justify-start lg:flex" style={{ width: '260px' }}>
           <div className="pt-16">
-          <div className="flex justify-start pl-20">
+          <div className="flex justify-start pl-8 xl:pl-20">
           <Image
             className="dark:invert scale-y-[-4.5] scale-x-[-1]"
             src="/robot-black.svg"
@@ -437,7 +437,7 @@ export default function GeneratePage() {
             priority
           />
           </div>
-          <div className="flex justify-start pl-20">
+          <div className="flex justify-start pl-8 xl:pl-20">
           <Image
             className="dark:invert scale-y-[4.5] scale-x-[-1]"
             src="/robot-black.svg"
