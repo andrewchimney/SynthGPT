@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { createClient, type User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { PresetViewer, parseVitalPreset, type ParsedPreset, type RawVitalPreset } from "../components/PresetViewer";
+import { CreatePostDialog, PostForm, type PostFormValues } from "../components/CreatePost";
+import { responseCookiesToRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 
 interface Post {
   id: string;
@@ -29,6 +31,24 @@ export default function BrowsePage() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
+
+  // New state for create post dialog and form (Sprint 3 - User Story 5)
+  // showCreateDialog: Controls the authentication/anonymous choice dialog
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  // showPostForm: Controls the actual post creation form after the user chooses to authenticate or continue anonymously
+  const [showPostForm, setShowPostForm] = useState(false);
+  // postFormValues: Holds the form values for creating a new post
+  const[postFormValues, setPostFormValues] = useState<PostFormValues>({
+    title: "",
+    description: "",
+    preset_id: null,
+  });
+  // isSubmitting: Indicates whether the post creation form is currently being submitted 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // postError: Displays any errors that occur during post creation
+  const [postError, setPostError] = useState<string | null>(null);
+
+
   const [postsLoading, setPostsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [parsedPresets, setParsedPresets] = useState<Record<string, ParsedPreset>>({});
@@ -70,29 +90,29 @@ export default function BrowsePage() {
   }, [supabase]);
 
   // Fetch posts from backend API
-  useEffect(() => {
-    const fetchPosts = async () => {
-      setPostsLoading(true);
+  const fetchPosts = useCallback(async () => {
+    setPostsLoading(true);
+    
+    try {
+      const url = searchQuery 
+        ? `${API_URL}/posts?search=${encodeURIComponent(searchQuery)}`
+        : `${API_URL}/posts`;
       
-      try {
-        const url = searchQuery 
-          ? `${API_URL}/posts?search=${encodeURIComponent(searchQuery)}`
-          : `${API_URL}/posts`;
-        
-        const response = await fetch(url);
-        if (!response.ok) throw new Error("Failed to fetch posts");
-        
-        const data = await response.json();
-        setPosts(data.posts);
-      } catch (error) {
-        console.error("Error fetching posts:", error);
-      }
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Failed to fetch posts");
       
-      setPostsLoading(false);
-    };
-
-    fetchPosts();
+      const data = await response.json();
+      setPosts(data.posts);
+    } catch (error) {
+      console.error("Error fetching posts:", error);
+    }
+    
+    setPostsLoading(false);
   }, [searchQuery]);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
 
   // Fetch preset data when expanding a post
   const handleExpandPost = useCallback(async (post: Post) => {
@@ -191,6 +211,52 @@ export default function BrowsePage() {
     setShowAuthPanel(false);
   };
 
+  // Create-post dialog displays a prompt when the user either signs up/logs in or continues anonymously when creating a new post
+  const handlePostAnonymously = () => {
+    setShowCreateDialog(false);  // Hide authentication choice dialog
+    setShowPostForm(true);  // Open post form
+  };
+
+  /**
+   * Handles the Create Post form submission
+   * 1. Sends the form data to the backend API to create a new post
+   * 2. Resets the form and closes the post form when a post is successfully created
+   * 3. Refreshes the post list so the new post appears in the feed
+  **/
+  const handleSubmitPost = async () => {
+    setIsSubmitting(true);  // Disables the form submit button to prevent multiple submissions
+    setPostError(null);  // Clears any previous error messages
+
+    try {
+      // Responsible for sending the post creation request to the backend API
+      const response = await fetch(`${API_URL}/api/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: postFormValues.title,  // Required
+          description: postFormValues.description, // Optional
+          preset_id: postFormValues.preset_id, // Optional - can be null if the user is simply sharing a preset without attaching it to a post
+          visibility: "public", // Required - determines the visibility of the post
+        }),
+      });
+
+      // Accounts for any errors returned from the backend when creating a new post
+      if (!response.ok) throw new Error("Failed to create post");
+
+      // If the post is successfully created, this will reset the form values for the next time the user creates a post
+      setPostFormValues({ title: "", description: "", preset_id: null }); // This will close the form 
+      setShowPostForm(false);
+
+      // After creating a post, this will refresh the post list to show the newly created post
+      await fetchPosts();
+    } catch (error) {
+      // Display any errors that occur during post creation in the form
+      setPostError(error instanceof Error ? error.message: "Error creating post");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
       {/* Navbar */}
@@ -216,6 +282,38 @@ export default function BrowsePage() {
           <Link href="/generate" className="text-sm font-medium text-black transition-colors hover:text-zinc-600 hover:underline dark:text-white dark:hover:text-zinc-300 cursor-pointer">
             Generate
           </Link>
+
+        {/* Post Creation Button and Authentication/Account Panel - Sprint 3 US5 */}
+          {/* Plus Button: opens post creation form */}
+          <button
+            onClick={() => {
+              // If the user is logged in, show the post creation form directly
+              if (user) {
+                setShowPostForm(true);
+              } else {
+                // If not logged in, show the authentication/anonymous choice dialog
+                setShowCreateDialog(true);
+              }
+            }}
+            title="Create a post"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500 transition-colors hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 cursor-pointer"
+          >
+            {/* Plus Icon */}
+            <svg
+              className="h-5 w-5 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+          </button>
+
           {user ? (
             <button
               aria-label="Profile"
@@ -492,6 +590,38 @@ export default function BrowsePage() {
           )}
         </div>
       </main>
+
+      {/* Post Creation Dialog shown to non-logged in users */}
+      <CreatePostDialog
+        isOpen={showCreateDialog}
+        onClose={() => setShowCreateDialog(false)}
+        onPostAnonymously={handlePostAnonymously}
+      />
+
+      {/* Actual post creation form */}
+      {showPostForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 dark:bg-zinc-900">
+            <h2 className="mb-4 text-lg font-bold text-black dark:text-white">
+              Create a Post
+            </h2>
+            <PostForm
+              presets={[]} // TODO: Pass the actual presets later when implementing preset attachment to posts
+              values={postFormValues}
+              onChange={setPostFormValues}
+              onSubmit={handleSubmitPost}
+              isSubmitting={isSubmitting}
+              error={postError}
+            />
+            <button
+              onClick={() => setShowPostForm(false)}
+              className="mt-4 w-full rounded bg-zinc-100 py-2 text-sm text-zinc-600 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700" 
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
