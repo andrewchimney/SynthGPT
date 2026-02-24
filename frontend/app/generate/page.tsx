@@ -49,6 +49,7 @@ export default function GeneratePage() {
 
   // Use hardcoded Supabase URL (same as generate page) since env vars don't work in Docker
   const SUPABASE_STORAGE_URL = "https://tsgqkjbmcokktrdyyiro.supabase.co/storage/v1/object/public";
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
   
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -63,21 +64,52 @@ export default function GeneratePage() {
 
     let isMounted = true;
 
-    supabase.auth.getSession().then(({ data }) => {
+    const validateAndSetUser = async (sessionUser: User | null) => {
       if (!isMounted) return;
-      setUser(data.session?.user ?? null);
+      
+      if (!sessionUser) {
+        setUser(null);
+        return;
+      }
+
+      // Validate that user still exists in database
+      try {
+        const response = await fetch(`${API_URL}/auth/validate-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: sessionUser.id }),
+        });
+
+        if (response.ok) {
+          setUser(sessionUser);
+        } else if (response.status === 404) {
+          // User doesn't exist anymore, clear session
+          await supabase.auth.signOut();
+          setUser(null);
+        } else {
+          // Error, but keep user for now
+          setUser(sessionUser);
+        }
+      } catch (err) {
+        // Network error, keep user for now
+        console.warn("Session validation failed:", err);
+        setUser(sessionUser);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      validateAndSetUser(data.session?.user ?? null);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!isMounted) return;
-      setUser(session?.user ?? null);
+      validateAndSetUser(session?.user ?? null);
     });
 
     return () => {
       isMounted = false;
       listener.subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [supabase, API_URL]);
 
   const handleDiscordLogin = async () => {
     if (!supabase) {
@@ -91,7 +123,7 @@ export default function GeneratePage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "discord",
       options: {
-        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        redirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined,
       },
     });
 
@@ -122,7 +154,7 @@ export default function GeneratePage() {
 
     // Call the /api/retrieve endpoint
     try {
-      const res = await fetch("http://localhost:8000/api/retrieve", {
+      const res = await fetch(`${API_URL}/retrieve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query, k: 5 }),

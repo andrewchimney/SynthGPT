@@ -48,14 +48,45 @@ export default function BrowsePage() {
 
     let isMounted = true;
 
-    supabase.auth.getSession().then(({ data }) => {
+    const validateAndSetUser = async (sessionUser: User | null) => {
       if (!isMounted) return;
-      setUser(data.session?.user ?? null);
+      
+      if (!sessionUser) {
+        setUser(null);
+        return;
+      }
+
+      // Validate that user still exists in database
+      try {
+        const response = await fetch(`${API_URL}/auth/validate-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: sessionUser.id }),
+        });
+
+        if (response.ok) {
+          setUser(sessionUser);
+        } else if (response.status === 404) {
+          // User doesn't exist anymore, clear session
+          await supabase.auth.signOut();
+          setUser(null);
+        } else {
+          // Error, but keep user for now
+          setUser(sessionUser);
+        }
+      } catch (err) {
+        // Network error, keep user for now
+        console.warn("Session validation failed:", err);
+        setUser(sessionUser);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      validateAndSetUser(data.session?.user ?? null);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!isMounted) return;
-      setUser(session?.user ?? null);
+      validateAndSetUser(session?.user ?? null);
     });
 
     return () => {
@@ -135,7 +166,7 @@ export default function BrowsePage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "discord",
       options: {
-        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        redirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined,
       },
     });
 
