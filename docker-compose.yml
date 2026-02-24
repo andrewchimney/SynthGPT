@@ -41,4 +41,4 @@ services:
     platform: linux/amd64
     build: ./vita-converter
     ports:
-      - "5000:5000"
+      - "5050:5000"
