@@ -42,6 +42,7 @@ export default function BrowsePage() {
     title: "",
     description: "",
     preset_id: null,
+    uploaded_file: null,
   });
   // isSubmitting: Indicates whether the post creation form is currently being submitted 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -229,13 +230,31 @@ export default function BrowsePage() {
 
     try {
       // Responsible for sending the post creation request to the backend API
-      const response = await fetch(`${API_URL}/api/posts`, {
+      let presetId = postFormValues.preset_id;
+
+      // If user uploaded a .vital file, upload it first to get a preset_id
+      if (postFormValues.uploaded_file) {
+        const formData = new FormData();
+        formData.append("file", postFormValues.uploaded_file);
+        formData.append("title", postFormValues.title);
+
+        const uploadRes = await fetch(`${API_URL}/presets/upload`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadRes.ok) throw new Error("Failed to upload preset");
+        const uploadData = await uploadRes.json();
+        presetId = uploadData.id;
+      }
+
+      const response = await fetch(`${API_URL}/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: postFormValues.title,  // Required
           description: postFormValues.description, // Optional
-          preset_id: postFormValues.preset_id, // Optional - can be null if the user is simply sharing a preset without attaching it to a post
+          preset_id: presetId, // Optional - from dropdown or uploaded file
           visibility: "public", // Required - determines the visibility of the post
         }),
       });
@@ -244,7 +263,7 @@ export default function BrowsePage() {
       if (!response.ok) throw new Error("Failed to create post");
 
       // If the post is successfully created, this will reset the form values for the next time the user creates a post
-      setPostFormValues({ title: "", description: "", preset_id: null }); // This will close the form 
+      setPostFormValues({ title: "", description: "", preset_id: null, uploaded_file: null }); // This will close the form 
       setShowPostForm(false);
 
       // After creating a post, this will refresh the post list to show the newly created post

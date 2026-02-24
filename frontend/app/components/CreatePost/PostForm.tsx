@@ -19,6 +19,7 @@ export interface PostFormValues {
     title: string; // The title of the post being created
     description: string; // The description of the post being created
     preset_id: string | null; // The ID of the selected preset or null if no preset is selected
+    uploaded_file: File | null; // A .vital file uploaded by the user
 }
 
 /**
@@ -102,6 +103,38 @@ export default function PostForm({
                         </option>
                     ))}
                 </select>
+            </div>
+
+            {/* Upload preset: optional .vital file upload */}
+            <div>
+                <label className="block text-sm font-medium text-black dark:text-white mb-1">
+                    Upload preset...
+                </label>
+                <label
+                    className="flex items-center justify-center w-full rounded border-2 border-dashed border-zinc-300 bg-white px-3 py-4 text-sm text-zinc-500 cursor-pointer hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-750"
+                >
+                    <span>
+                        {values.uploaded_file ? values.uploaded_file.name : "Upload . . ."}
+                    </span>
+                    <input
+                        type="file"
+                        accept=".vital"
+                        className="hidden"
+                        onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            onChange({ ...values, uploaded_file: file });
+                        }}
+                    />
+                </label>
+                {values.uploaded_file && (
+                    <button
+                        type="button"
+                        onClick={() => onChange({ ...values, uploaded_file: null })}
+                        className="mt-1 text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                    >
+                        Remove file
+                    </button>
+                )}
             </div>
 
             {/* Optional error message */}

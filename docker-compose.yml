@@ -6,6 +6,8 @@ services:
     volumes:
       - ./backend:/app
       - ./data:/app/data
+    depends_on:
+      - vita-converter
     environment:
       DATABASE_URL: ${DATABASE_URL}
       STORAGE_URL: ${STORAGE_URL}
@@ -13,6 +15,7 @@ services:
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
       PRESETS_BUCKET: ${PRESETS_BUCKET}
       PREVIEWS_BUCKET: ${PREVIEWS_BUCKET}
+      VITA_CONVERTER_URL: http://vita-converter:5000
       EMBEDDING_MODEL: clap
       EMBEDDING_DIM: "512"
       HF_TOKEN: ${HF_TOKEN}
@@ -33,3 +36,9 @@ services:
       - ./frontend:/app
       - /app/node_modules
     command: npm run dev
+
+  vita-converter:
+    platform: linux/amd64
+    build: ./vita-converter
+    ports:
+      - "5000:5000"

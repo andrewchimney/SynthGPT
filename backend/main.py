@@ -6,7 +6,7 @@ from typing import Optional
 import asyncpg
 
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File as FastAPIFile
 from dotenv import load_dotenv 
 
 load_dotenv()
@@ -17,6 +17,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 
 import laion_clap
+
+VITA_CONVERTER_URL = os.getenv("VITA_CONVERTER_URL")  # e.g. http://vita-converter:5000
 
 
 from rag.retrieve import router as retrieve_router
@@ -213,6 +215,171 @@ def get_preview_url(preview_object_key: str | None) -> str | None:
     if not preview_object_key or not PREVIEWS_BUCKET:
         return None
     return f"{PREVIEWS_BUCKET}/{preview_object_key}"
+
+
+# ==================== PRESET UPLOAD API ====================
+
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+@app.post("/api/presets/upload")
+async def upload_preset(
+    file: UploadFile = FastAPIFile(...),
+    title: str = Query("Uploaded Preset"),
+):
+    """Upload a .vital preset file, store in Supabase storage, and create a DB record"""
+    if not file.filename or not file.filename.endswith(".vital"):
+        raise HTTPException(status_code=400, detail="Only .vital files are accepted")
+
+    contents = await file.read()
+
+    # Create DB record first to get the preset ID
+    conn = await asyncpg.connect(DATABASE_URL)
+    row = await conn.fetchrow("""
+        INSERT INTO presets (title, visibility, supabase_key, preset_object_key, source)
+        VALUES ($1, 'public', '', '', 'upload')
+        RETURNING id
+    """, title)
+    preset_id = str(row["id"])
+
+    # Upload to Supabase Storage
+    object_key = f"{preset_id}/preset.vital"
+    if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+        async with httpx.AsyncClient() as client:
+            upload_url = f"{SUPABASE_URL}/storage/v1/object/presets/{object_key}"
+            resp = await client.post(
+                upload_url,
+                content=contents,
+                headers={
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "Content-Type": "application/octet-stream",
+                },
+            )
+            if resp.status_code not in (200, 201):
+                # Still return the preset_id even if storage fails, post can exist without file in storage
+                print(f"Warning: Failed to upload to storage: {resp.status_code} {resp.text}")
+
+    # Update DB record with the object key
+    await conn.execute("""
+        UPDATE presets SET supabase_key = $1, preset_object_key = $1
+        WHERE id = $2
+    """, object_key, row["id"])
+
+    # ── Generate .wav audio preview via vita-converter microservice ──
+    preview_object_key = None
+    if VITA_CONVERTER_URL:
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                convert_resp = await client.post(
+                    f"{VITA_CONVERTER_URL}/convert",
+                    files={"file": ("preset.vital", contents, "application/octet-stream")},
+                )
+            if convert_resp.status_code == 200:
+                wav_bytes = convert_resp.content
+                # Upload .wav to Supabase previews bucket
+                preview_object_key = f"{preset_id}/preview.wav"
+                if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+                    async with httpx.AsyncClient() as client:
+                        preview_upload_url = f"{SUPABASE_URL}/storage/v1/object/previews/{preview_object_key}"
+                        prev_resp = await client.post(
+                            preview_upload_url,
+                            content=wav_bytes,
+                            headers={
+                                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                                "Content-Type": "audio/wav",
+                            },
+                        )
+                        if prev_resp.status_code not in (200, 201):
+                            print(f"Warning: Failed to upload preview: {prev_resp.status_code} {prev_resp.text}")
+                            preview_object_key = None
+
+                    # Update DB with preview_object_key
+                    if preview_object_key:
+                        await conn.execute("""
+                            UPDATE presets SET preview_object_key = $1
+                            WHERE id = $2
+                        """, preview_object_key, row["id"])
+            else:
+                print(f"Warning: vita-converter returned {convert_resp.status_code}: {convert_resp.text}")
+        except Exception as e:
+            print(f"Warning: Audio preview generation failed: {e}")
+            preview_object_key = None
+    else:
+        print("Skipping audio preview generation: VITA_CONVERTER_URL not set")
+
+    await conn.close()
+
+    return {"id": preset_id, "object_key": object_key, "preview_object_key": preview_object_key}
+
+
+@app.post("/api/presets/{preset_id}/generate-preview")
+async def generate_preset_preview(preset_id: str):
+    """Generate a .wav audio preview for an existing preset that doesn't have one yet.
+    Downloads the .vital from Supabase storage, sends to vita-converter, uploads preview, updates DB."""
+    if not VITA_CONVERTER_URL:
+        raise HTTPException(status_code=503, detail="Audio preview generation unavailable: VITA_CONVERTER_URL not set")
+
+    conn = await asyncpg.connect(DATABASE_URL)
+    row = await conn.fetchrow("""
+        SELECT preset_object_key, preview_object_key FROM presets WHERE id = $1
+    """, preset_id)
+
+    if not row or not row["preset_object_key"]:
+        await conn.close()
+        raise HTTPException(status_code=404, detail="Preset not found or has no .vital file")
+
+    # Skip if preview already exists
+    if row["preview_object_key"]:
+        await conn.close()
+        return {"preview_url": get_preview_url(row["preview_object_key"]), "status": "already_exists"}
+
+    # Download the .vital file from Supabase storage
+    preset_url = f"{PRESETS_BUCKET}/{row['preset_object_key']}"
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(preset_url)
+        if resp.status_code != 200:
+            await conn.close()
+            raise HTTPException(status_code=502, detail="Failed to download preset from storage")
+        vital_bytes = resp.content
+
+    # Send .vital to vita-converter microservice
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            convert_resp = await client.post(
+                f"{VITA_CONVERTER_URL}/convert",
+                files={"file": ("preset.vital", vital_bytes, "application/octet-stream")},
+            )
+        if convert_resp.status_code != 200:
+            await conn.close()
+            raise HTTPException(status_code=502, detail=f"vita-converter error: {convert_resp.status_code} {convert_resp.text}")
+        wav_bytes = convert_resp.content
+    except httpx.HTTPError as e:
+        await conn.close()
+        raise HTTPException(status_code=502, detail=f"Failed to reach vita-converter: {e}")
+
+    # Upload .wav to Supabase previews bucket
+    preview_object_key = f"{preset_id}/preview.wav"
+    if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+        async with httpx.AsyncClient() as client:
+            preview_upload_url = f"{SUPABASE_URL}/storage/v1/object/previews/{preview_object_key}"
+            prev_resp = await client.post(
+                preview_upload_url,
+                content=wav_bytes,
+                headers={
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "Content-Type": "audio/wav",
+                },
+            )
+            if prev_resp.status_code not in (200, 201):
+                await conn.close()
+                raise HTTPException(status_code=502, detail=f"Failed to upload preview to storage: {prev_resp.status_code}")
+
+    # Update DB
+    await conn.execute("""
+        UPDATE presets SET preview_object_key = $1 WHERE id = $2
+    """, preview_object_key, preset_id)
+    await conn.close()
+
+    return {"preview_url": get_preview_url(preview_object_key), "status": "generated"}
 
 
 # ==================== POSTS API ====================
