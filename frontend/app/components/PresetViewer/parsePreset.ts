@@ -2,6 +2,7 @@ import {
   RawVitalPreset,
   ParsedPreset,
   OscillatorInfo,
+  WavetableInfo,
   EnvelopeInfo,
   FilterInfo,
   LFOInfo,
@@ -51,17 +52,70 @@ function getNum(settings: Record<string, unknown>, key: string, defaultVal = 0):
   return typeof val === 'number' ? val : defaultVal;
 }
 
-function parseOscillators(settings: Record<string, unknown>, wavetables?: Array<{ name: string }>): OscillatorInfo[] {
+interface RawWavetable {
+  name: string;
+  author?: string;
+  groups?: Array<{
+    components?: Array<{
+      type?: string;
+      keyframes?: Array<{
+        wave_data?: string;
+      }>;
+    }>;
+  }>;
+}
+
+function extractWaveData(wavetable: RawWavetable): { waveData?: string; componentType?: string } {
+  const groups = wavetable.groups || [];
+  if (groups.length === 0) return {};
+  
+  const components = groups[0].components || [];
+  if (components.length === 0) return {};
+  
+  const component = components[0];
+  const componentType = component.type || 'Unknown';
+  
+  // Get wave data from first keyframe if available
+  const keyframes = component.keyframes || [];
+  const waveData = keyframes[0]?.wave_data;
+  
+  return { waveData, componentType };
+}
+
+function parseOscillators(settings: Record<string, unknown>): OscillatorInfo[] {
   const oscillators: OscillatorInfo[] = [];
+  
+  // Wavetables are stored in settings.wavetables
+  // Wavetables are stored in settings.wavetables, not at the top level
+  const wavetables = (settings.wavetables as RawWavetable[]) || [];
 
   for (let i = 1; i <= 3; i++) {
     const prefix = `osc_${i}_`;
     const enabled = getNum(settings, `${prefix}on`) === 1;
+    
+    // Get the wavetable for this oscillator (0-indexed)
+    const wavetable = wavetables[i - 1];
+    const wavetableName = wavetable?.name || 'Init';
+    const { waveData, componentType } = wavetable ? extractWaveData(wavetable) : {};
+    
+    // Build wavetable info object
+    const wavetableInfo: WavetableInfo | undefined = wavetable ? {
+      name: wavetableName,
+      author: wavetable.author,
+      waveData,
+      componentType,
+    } : undefined;
 
     oscillators.push({
       id: i,
       enabled,
-      wavetableName: wavetables?.[i - 1]?.name || 'Init',
+      wavetableName,
+      wavetable: wavetable ? {
+        name: wavetableName,
+        author: wavetable.author,
+        waveData,
+        componentType,
+      } : undefined,
       level: Math.round(getNum(settings, `${prefix}level`) * 100),
       transpose: getNum(settings, `${prefix}transpose`),
       spectralMorphType: SPECTRAL_MORPH_TYPES[getNum(settings, `${prefix}spectral_morph_type`)] || 'None',
@@ -386,7 +440,7 @@ export function parseVitalPreset(raw: RawVitalPreset): ParsedPreset {
     synthVersion: raw.synth_version || 'Unknown',
 
     // Core Sound
-    oscillators: parseOscillators(settings, raw.wavetables),
+    oscillators: parseOscillators(settings),
     envelopes: parseEnvelopes(settings),
     filters: parseFilters(settings),
 

@@ -12,6 +12,7 @@ export type {
   ParsedPreset, 
   RawVitalPreset,
   OscillatorInfo,
+  WavetableInfo,
   EnvelopeInfo,
   FilterInfo,
   LFOInfo,

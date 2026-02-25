@@ -6,6 +6,7 @@ services:
     volumes:
       - ./backend:/app
       - ./data:/app/data
+<<<<<<< HEAD
     env_file:
       - .env
     #environment:
@@ -16,6 +17,18 @@ services:
       # EMBEDDING_MODEL: clap
       # EMBEDDING_DIM: "512"
       # HF_TOKEN: ${HF_TOKEN}
+=======
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      STORAGE_URL: ${STORAGE_URL}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      PRESETS_BUCKET: ${PRESETS_BUCKET}
+      PREVIEWS_BUCKET: ${PREVIEWS_BUCKET}
+      EMBEDDING_MODEL: clap
+      EMBEDDING_DIM: "512"
+      HF_TOKEN: ${HF_TOKEN}
+>>>>>>> a30b801f9a8823bf47cf006c9620e0700510a507
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
