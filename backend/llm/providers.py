@@ -3,7 +3,7 @@ LLM Provider Factory
 
 Supports multiple LLM providers through LangChain:
 - OpenAI (GPT-4o, GPT-4, GPT-3.5-turbo)
-- Google Gemini (gemini-1.5-flash, gemini-1.5-pro)
+- Google Gemini (gemini-2.5-flash)
 - Ollama (local models like qwen2.5, llama3, mistral)
 
 Usage:

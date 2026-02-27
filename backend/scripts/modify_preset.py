@@ -1,6 +1,41 @@
+import copy
 import json
 import sys
 import os
+
+
+def _coerce_to_float(key: str, value) -> float | None:
+    """Coerce a parameter value to float.
+
+    Vital's preset loader only accepts numeric values in the settings dict.
+    The LLM sometimes returns booleans (True/False) or strings ('soft clip').
+    Returns None if the value cannot be meaningfully converted.
+    """
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            print(f"[apply_patch_dict] skipping '{key}': cannot coerce string '{value}' to float")
+            return None
+    print(f"[apply_patch_dict] skipping '{key}': unexpected type {type(value).__name__}")
+    return None
+
+
+def apply_patch_dict(vital_data: dict, patch_dict: dict) -> dict:
+    """Apply a patch dict to a vital preset dict in-memory and return the patched copy."""
+    result = copy.deepcopy(vital_data)
+    if 'settings' not in result or not isinstance(result['settings'], dict):
+        result['settings'] = {}
+    for key, value in patch_dict.items():
+        coerced = _coerce_to_float(key, value)
+        if coerced is not None:
+            result['settings'][key] = coerced
+    return result
+
 
 def apply_patch_to_vital(original_path, patch_dict, output_path):
 	with open(original_path, 'r', encoding='utf-8') as f:

@@ -16,6 +16,9 @@ services:
       EMBEDDING_MODEL: clap
       EMBEDDING_DIM: "512"
       HF_TOKEN: ${HF_TOKEN}
+      LLM_PROVIDER: gemini
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
@@ -23,11 +26,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-      - PREVIEWS_BUCKET=${PREVIEWS_BUCKET}
-      - PRESETS_BUCKET=${PRESETS_BUCKET}
+      - NEXT_PUBLIC_PREVIEWS_BUCKET=${PREVIEWS_BUCKET}
+      - NEXT_PUBLIC_PRESETS_BUCKET=${PRESETS_BUCKET}
       - WATCHPACK_POLLING=true
     volumes:
       - ./frontend:/app

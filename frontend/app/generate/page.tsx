@@ -5,18 +5,35 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type User } from "@supabase/supabase-js";
 
+type PresetResult = {
+  id: string;
+  title: string;
+  score: number;
+  preview_object_key: string | null;
+  preset_object_key?: string;
+};
+
 interface Message {
   role: "user" | "assistant";
   content: string;
   isLoading?: boolean;
-  presets?: Array<{
-    id: string;
-    title: string;
-    score: number;
-    preview_object_key: string | null;
-    preset_object_key?: string;
-  }>;
+  presets?: PresetResult[];
   error?: boolean;
+  /** Set after the user picks one of the preset cards for modification */
+  selectedPresetId?: string;
+  /** When true, the preset card grid collapses to a compact summary chip */
+  presetsConsumed?: boolean;
+  /** Parsed parameter changes returned by /api/modify-preset */
+  presetChanges?: {
+    changes: Record<string, number | string>;
+    explanation: string;
+    /** Full modified .vital JSON for download */
+    modifiedData?: Record<string, unknown>;
+    /** Preset name, used for the download filename */
+    presetName?: string;
+    /** Base64-encoded WAV audio preview */
+    audioB64?: string;
+  };
 }
 
 const placeholderExamples = [
@@ -46,6 +63,17 @@ export default function GeneratePage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [showChat, setShowChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  /** The preset the user has clicked on, pending a modification request */
+  const [selectedPreset, setSelectedPreset] = useState<{
+    messageIndex: number;
+    preset: PresetResult;
+  } | null>(null);
+
+  /** Current in-memory .vital preset data, updated after each modification iteration */
+  const [currentPresetData, setCurrentPresetData] = useState<Record<string, unknown> | null>(null);
+  /** Display name for the preset currently being modified (persists across iterations) */
+  const [currentPresetName, setCurrentPresetName] = useState<string | null>(null);
 
   // Use env vars for bucket URLs
   const PRESETS_BUCKET = process.env.NEXT_PUBLIC_PRESETS_BUCKET;
@@ -113,113 +141,162 @@ export default function GeneratePage() {
     if (!inputValue.trim()) return;
 
     const query = inputValue.trim();
-
-    // Add user message
-    const userMessage: Message = { role: "user", content: query };
-    const historySnapshot = [...messages, userMessage];
-    setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
+
+    // -----------------------------------------------------------------------
+    // MODIFICATION FLOW — user has selected a preset OR is iterating on one
+    // -----------------------------------------------------------------------
+    if (selectedPreset || currentPresetData) {
+      const isFirstModification = selectedPreset !== null;
+      const presetName = isFirstModification
+        ? selectedPreset!.preset.title
+        : currentPresetName ?? "preset";
+      const messageIndex = selectedPreset?.messageIndex;
+
+      const userMessage: Message = { role: "user", content: query };
+      setMessages((prev) => [...prev, userMessage]);
+
+      // Collapse the original preset card grid on first modification
+      if (isFirstModification && messageIndex !== undefined) {
+        setMessages((prev) =>
+          prev.map((msg, i) =>
+            i === messageIndex
+              ? { ...msg, presetsConsumed: true, selectedPresetId: selectedPreset!.preset.id }
+              : msg
+          )
+        );
+      }
+
+      setSelectedPreset(null);
+
+      // Show loading bubble
+      setMessages((prev) => [...prev, { role: "assistant", content: "", isLoading: true }]);
+
+      try {
+        const requestBody = isFirstModification
+          ? {
+              preset_id: selectedPreset!.preset.id,
+              description: query,
+              context: `The user is modifying an existing preset called "${presetName}".`,
+            }
+          : {
+              preset_data: currentPresetData,
+              description: query,
+              context: `The user is further modifying a preset called "${presetName}".`,
+            };
+
+        const modifyRes = await fetch(`${API_BASE_URL}/api/modify-preset`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!modifyRes.ok) {
+          const body = await modifyRes.text().catch(() => "(no body)");
+          console.error(`/api/modify-preset returned ${modifyRes.status}. Body: ${body}`);
+          throw new Error(`Modification error ${modifyRes.status}: ${body}`);
+        }
+
+        const modifyData = await modifyRes.json();
+        const { modified_preset, changes, explanation, audio_b64 } = modifyData as {
+          modified_preset: Record<string, unknown>;
+          changes: Record<string, number | string>;
+          explanation: string;
+          audio_b64: string | null;
+        };
+
+        // Persist the modified preset for future iterations
+        setCurrentPresetData(modified_preset);
+        if (isFirstModification) setCurrentPresetName(presetName);
+
+        setMessages((prev) => {
+          const withoutLoading = prev.filter((msg) => !msg.isLoading);
+          return [
+            ...withoutLoading,
+            {
+              role: "assistant",
+              content: explanation,
+              presetChanges: {
+                changes,
+                explanation,
+                modifiedData: modified_preset,
+                presetName,
+                audioB64: audio_b64 ?? undefined,
+              },
+            },
+          ];
+        });
+      } catch (error) {
+        const isNetworkError = error instanceof TypeError;
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error("Modification error:", detail);
+        setMessages((prev) => {
+          const withoutLoading = prev.filter((msg) => !msg.isLoading);
+          return [
+            ...withoutLoading,
+            {
+              role: "assistant",
+              content: isNetworkError
+                ? `Couldn't reach the backend. Is the server running on ${API_BASE_URL}?`
+                : `The modification failed: ${detail}`,
+              error: true,
+            },
+          ];
+        });
+      }
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // INITIAL RETRIEVAL FLOW — user has typed a new sound description
+    // -----------------------------------------------------------------------
+    const userMessage: Message = { role: "user", content: query };
+    setMessages((prev) => [...prev, userMessage]);
     setShowChat(true);
 
-    // Add loading message
-    const loadingMessage: Message = { role: "assistant", content: "", isLoading: true };
-    setMessages((prev) => [...prev, loadingMessage]);
-
-    const toHistoryPayload = (items: Message[]) =>
-      items
-        .filter((msg) => !msg.isLoading && !msg.error)
-        .map((msg) => ({ role: msg.role, content: msg.content }));
-
-    const buildPresetContext = (presets: NonNullable<Message["presets"]>) =>
-      presets
-        .map((preset, index) => {
-          const score = Number.isFinite(preset.score) ? preset.score.toFixed(3) : "n/a";
-          const preview = preset.preview_object_key ?? "none";
-          return `${index + 1}. ${preset.title} (id: ${preset.id}, score: ${score}, preview: ${preview})`;
-        })
-        .join("\n");
+    setMessages((prev) => [...prev, { role: "assistant", content: "", isLoading: true }]);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/retrieve`, {
+      const retrieveRes = await fetch(`${API_BASE_URL}/api/retrieve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query, k: 5 }),
       });
 
-      if (!res.ok) {
-        throw new Error("Failed to fetch presets");
+      if (!retrieveRes.ok) {
+        const body = await retrieveRes.text().catch(() => "(no body)");
+        throw new Error(`CLAP retrieval failed (${retrieveRes.status}): ${body}`);
       }
 
-      const data = await res.json();
-      const results = data.results || [];
-
-      // Debug: log the results to see what data we're getting
-      console.log("Retrieved presets:", results);
-
-      const assistantMessages: Message[] = [];
-      assistantMessages.push({
-        role: "assistant",
-        content:
-          results.length > 0
-            ? `Here are the top ${results.length} preset${results.length !== 1 ? "s" : ""} that match your description:`
-            : `No presets found matching "${query}". Try a different description!`,
-        presets: results.length > 0 ? results : undefined,
-      });
-
-      try {
-        const history = toHistoryPayload(historySnapshot);
-        const presetContext = results.length > 0 ? buildPresetContext(results) : "";
-
-        if (presetContext) {
-          history.push({
-            role: "assistant",
-            content: `Relevant presets from the database:\n${presetContext}`,
-          });
-        }
-
-        const chatRes = await fetch(`${API_BASE_URL}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: query,
-            history,
-          }),
-        });
-
-        if (!chatRes.ok) {
-          throw new Error("Failed to fetch LLM response");
-        }
-
-        const chatData = await chatRes.json();
-        assistantMessages.push({
-          role: "assistant",
-          content: chatData.response ?? "I couldn't generate a refinement response.",
-        });
-      } catch (error) {
-        console.error("Error fetching LLM response:", error);
-        assistantMessages.push({
-          role: "assistant",
-          content:
-            "Sorry, I couldn't refine the sound with the LLM right now. The retrieve results are still shown above.",
-          error: true,
-        });
-      }
+      const retrieveData = await retrieveRes.json();
+      const results: PresetResult[] = retrieveData.results ?? [];
 
       setMessages((prev) => {
         const withoutLoading = prev.filter((msg) => !msg.isLoading);
-        return [...withoutLoading, ...assistantMessages];
+        return [
+          ...withoutLoading,
+          {
+            role: "assistant",
+            content:
+              results.length > 0
+                ? "Here are the top presets matching your description. Click one to select it, then describe how you'd like to modify it:"
+                : `No presets found matching "${query}". Try a different description!`,
+            presets: results.length > 0 ? results : undefined,
+          },
+        ];
       });
     } catch (error) {
-      console.error("Error fetching presets:", error);
+      console.error("Error:", error);
       setMessages((prev) => {
         const withoutLoading = prev.filter((msg) => !msg.isLoading);
-        const assistantMessage: Message = {
-          role: "assistant",
-          content:
-            `Sorry, I couldn't connect to the backend. Make sure the server is running on ${API_BASE_URL}`,
-          error: true,
-        };
-        return [...withoutLoading, assistantMessage];
+        return [
+          ...withoutLoading,
+          {
+            role: "assistant",
+            content: `Sorry, something went wrong. Make sure the server is running on ${API_BASE_URL}`,
+            error: true,
+          },
+        ];
       });
     }
   };
@@ -409,52 +486,132 @@ export default function GeneratePage() {
                         <div className={message.error ? "text-red-600 dark:text-red-400" : ""}>
                           {message.content}
                         </div>
-                        {message.presets && message.presets.length > 0 && (
-                          <div className="mt-2 space-y-2">
-                            {message.presets.map((preset, presetIndex) => (
-                              <div
-                                key={presetIndex}
-                                className="border-t border-black dark:border-white pt-2 mt-2"
+                        {message.presetChanges && (
+                          <div className="mt-3 space-y-2">
+                            {message.presetChanges.audioB64 ? (
+                              <audio
+                                controls
+                                className="w-full"
+                                style={{ height: '40px' }}
+                                src={`data:audio/wav;base64,${message.presetChanges.audioB64}`}
                               >
-                                <div className="flex items-center justify-between mb-1">
-                                  <div className="flex-1">
-                                    <div className="font-medium text-sm text-black dark:text-white">
-                                      {preset.title}
-                                    </div>
-                                    <div className="text-xs opacity-60 mt-0.5">
-                                      {(preset.score * 100).toFixed(0)}% match
-                                    </div>
-                                  </div>
-                                  <a
-                                    href={`${PRESETS_BUCKET}/${preset.preset_object_key || preset.id}`}
-                                    download
-                                    className="px-2 py-1 border border-black dark:border-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition"
-                                    title="Download"
-                                  >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                    </svg>
-                                  </a>
-                                </div>
-                                {preset.preview_object_key ? (
-                                  <div className="mt-1.5">
-                                    <audio
-                                      controls
-                                      className="w-full"
-                                      style={{ height: '40px' }}
-                                      src={`${PREVIEWS_BUCKET}/${preset.preview_object_key}`}
-                                    >
-                                      Your browser does not support the audio element.
-                                    </audio>
-                                  </div>
-                                ) : (
-                                  <div className="text-xs opacity-50 italic mt-1">
-                                    No preview available
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                                Your browser does not support the audio element.
+                              </audio>
+                            ) : (
+                              <div className="text-xs italic opacity-50">No preview available</div>
+                            )}
+                            {message.presetChanges.modifiedData && (
+                              <button
+                                onClick={() => {
+                                  const blob = new Blob(
+                                    [JSON.stringify(message.presetChanges!.modifiedData, null, 2)],
+                                    { type: "application/json" }
+                                  );
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement("a");
+                                  a.href = url;
+                                  a.download = `${
+                                    (message.presetChanges!.presetName || "preset").replace(/\s+/g, "_")
+                                  }_modified.vital`;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  document.body.removeChild(a);
+                                  URL.revokeObjectURL(url);
+                                }}
+                                className="flex w-full items-center justify-center gap-1.5 rounded border border-black px-3 py-1.5 text-xs font-medium transition hover:bg-black hover:text-white dark:border-white dark:hover:bg-white dark:hover:text-black"
+                              >
+                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                Download{message.presetChanges.presetName ? ` "${message.presetChanges.presetName}"` : " Modified Preset"}
+                              </button>
+                            )}
                           </div>
+                        )}
+                        {message.presets && message.presets.length > 0 && (
+                          <>
+                            {message.presetsConsumed ? (
+                              // Compact chip shown after user submits a modification
+                              <div className="mt-2 flex items-center gap-2 rounded-md bg-zinc-100 px-3 py-2 text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                <svg className="w-3 h-3 shrink-0 text-cyan-500" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                                <span>
+                                  Selected:{" "}
+                                  <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                                    {message.presets.find((p) => p.id === message.selectedPresetId)?.title ?? "Unknown"}
+                                  </span>
+                                </span>
+                              </div>
+                            ) : (
+                              // Selectable preset card grid
+                              <div className="mt-2 space-y-2">
+                                {message.presets.map((preset, presetIndex) => {
+                                  const isSelected =
+                                    selectedPreset?.messageIndex === index &&
+                                    selectedPreset.preset.id === preset.id;
+                                  const anySelected = selectedPreset?.messageIndex === index;
+                                  return (
+                                    <div
+                                      key={presetIndex}
+                                      onClick={() => setSelectedPreset({ messageIndex: index, preset })}
+                                      className={`cursor-pointer rounded border-t border-black pt-2 mt-2 transition dark:border-white ${
+                                        isSelected
+                                          ? "ring-2 ring-cyan-400"
+                                          : anySelected
+                                          ? "opacity-40"
+                                          : "hover:opacity-80"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between mb-1">
+                                        <div className="flex-1">
+                                          <div className="font-medium text-sm text-black dark:text-white flex items-center gap-1.5">
+                                            {isSelected && (
+                                              <svg className="w-3 h-3 shrink-0 text-cyan-400" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                              </svg>
+                                            )}
+                                            {preset.title}
+                                          </div>
+                                          <div className="text-xs opacity-60 mt-0.5">
+                                            {(preset.score * 100).toFixed(0)}% match
+                                          </div>
+                                        </div>
+                                        <a
+                                          href={`${PRESETS_BUCKET}/${preset.preset_object_key || preset.id}`}
+                                          download
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="px-2 py-1 border border-black dark:border-white hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition"
+                                          title="Download"
+                                        >
+                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                          </svg>
+                                        </a>
+                                      </div>
+                                      {preset.preview_object_key ? (
+                                        <div className="mt-1.5">
+                                          <audio
+                                            controls
+                                            className="w-full"
+                                            style={{ height: '40px' }}
+                                            src={`${PREVIEWS_BUCKET}/${preset.preview_object_key}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            Your browser does not support the audio element.
+                                          </audio>
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs opacity-50 italic mt-1">
+                                          No preview available
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -464,22 +621,52 @@ export default function GeneratePage() {
               </div>
 
               {/* Input form */}
-              <form onSubmit={handleSubmit} className="flex gap-2">
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Type your message..."
-                  className="flex-1 rounded-xl border border-zinc-300 bg-zinc-50 px-6 py-3 text-base text-black placeholder-zinc-500 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-400"
-                />
-                <button
-                  type="submit"
-                  disabled={!inputValue.trim()}
-                  className="rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-medium text-black transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-6 sm:text-base dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700"
-                >
-                  Send
-                </button>
-              </form>
+              <div className="space-y-2">
+                {(selectedPreset || currentPresetData) && (
+                  <div className="flex items-center justify-between rounded-lg border border-cyan-400 bg-cyan-50 px-3 py-1.5 text-xs dark:bg-cyan-950 dark:border-cyan-600">
+                    <span className="text-cyan-700 dark:text-cyan-300">
+                      Modifying:{" "}
+                      <span className="font-semibold">
+                        {selectedPreset?.preset.title ?? currentPresetName}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPreset(null);
+                        setCurrentPresetData(null);
+                        setCurrentPresetName(null);
+                      }}
+                      className="ml-2 text-cyan-500 hover:text-cyan-700 dark:hover:text-cyan-200 transition"
+                      aria-label="Cancel modification"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                <form onSubmit={handleSubmit} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    placeholder={
+                      selectedPreset
+                        ? `Describe how to modify "${selectedPreset.preset.title}"...`
+                        : currentPresetData
+                        ? `Describe further changes to "${currentPresetName}"...`
+                        : "Type your message..."
+                    }
+                    className="flex-1 rounded-xl border border-zinc-300 bg-zinc-50 px-6 py-3 text-base text-black placeholder-zinc-500 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:placeholder-zinc-400"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!inputValue.trim()}
+                    className="rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-medium text-black transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-6 sm:text-base dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700"
+                  >
+                    {selectedPreset || currentPresetData ? "Modify" : "Send"}
+                  </button>
+                </form>
+              </div>
             </div>
           )}
         </div>

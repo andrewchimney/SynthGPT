@@ -1,6 +1,7 @@
 # Main server file, will process requests and use logic from rag folder to respond to frontend requests
 
 from contextlib import asynccontextmanager
+import json
 import os
 from typing import Optional
 import asyncpg
@@ -25,6 +26,14 @@ import laion_clap
 from rag.retrieve import router as retrieve_router
 from llm import get_llm, get_generation_chain, get_rag_chain
 from llm.providers import check_provider_health, get_provider_config, LLMProvider
+from scripts.modify_preset import apply_patch_dict
+try:
+    from scripts.render import render_preset_to_wav_b64
+    _vita_available = True
+except Exception:
+    _vita_available = False
+    def render_preset_to_wav_b64(*_a, **_kw):  # type: ignore[misc]
+        return None
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -39,30 +48,25 @@ def load_model():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Loading CLAP model")
-    app.state.clap = load_model()
-    print("CLAP model loaded)")
+    try:
+        print("Loading CLAP model...")
+        app.state.clap = load_model()
+        print("CLAP model loaded.")
+    except Exception as exc:
+        print(f"WARNING: CLAP model failed to load ({exc}). Retrieval will be unavailable.")
+        app.state.clap = None
 
     yield
-    
-    del app.state.clap
+
+    if getattr(app.state, "clap", None) is not None:
+        del app.state.clap
 
 
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# CORS middleware to allow frontend requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,6 +93,14 @@ class GenerateRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: Optional[list] = None
+    provider: Optional[str] = None
+
+
+class ModifyPresetRequest(BaseModel):
+    preset_id: Optional[str] = None
+    preset_data: Optional[dict] = None
+    description: str
+    context: Optional[str] = None
     provider: Optional[str] = None
 
 
@@ -174,12 +186,101 @@ async def generate_preset(req: GenerateRequest):
                 "description": req.description,
                 "context": req.context or ""
             })
-            return {"result": result}
+            # Strip markdown code fences if the LLM wraps its output
+            cleaned = result.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+                if cleaned.rstrip().endswith("```"):
+                    cleaned = cleaned.rstrip()[:-3].rstrip()
+            return {"result": cleaned}
             
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+
+@app.post("/api/modify-preset")
+async def modify_preset_endpoint(req: ModifyPresetRequest):
+    """Apply LLM-generated parameter changes to a Vital preset"""
+    try:
+        # --- 1. Resolve base preset data ---
+        if req.preset_data is not None:
+            base_preset = req.preset_data
+        elif req.preset_id is not None:
+            conn = await asyncpg.connect(DATABASE_URL)
+            row = await conn.fetchrow(
+                "SELECT preset_object_key FROM presets WHERE id = $1", req.preset_id
+            )
+            await conn.close()
+            if not row or not row["preset_object_key"]:
+                raise HTTPException(status_code=404, detail="Preset not found")
+            preset_url = f"{PRESETS_BUCKET}/{row['preset_object_key']}"
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(preset_url)
+                if resp.status_code != 200:
+                    raise HTTPException(
+                        status_code=resp.status_code,
+                        detail=f"Failed to fetch preset from storage: {resp.status_code}",
+                    )
+                base_preset = resp.json()
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Either preset_id or preset_data must be provided",
+            )
+
+        # --- 2. Run LLM chain ---
+        chain = get_generation_chain(provider=req.provider)
+        preset_context = json.dumps(base_preset.get("settings", {}), indent=2)
+        result = await chain.ainvoke({
+            "description": req.description,
+            "context": preset_context,
+        })
+
+        # --- 3. Parse JSON output ---
+        # Strip markdown code fences if present (e.g. ```json ... ```)
+        try:
+            cleaned = result.strip()
+            if cleaned.startswith("```"):
+                # Remove opening fence (```json or ```)
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+                # Remove closing fence
+                if cleaned.rstrip().endswith("```"):
+                    cleaned = cleaned.rstrip()[:-3].rstrip()
+            parsed = json.loads(cleaned)
+            changes = parsed.get("changes", {})
+            explanation = parsed.get("explanation", "")
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=500,
+                detail=f"LLM returned invalid JSON: {result}",
+            )
+
+        # --- 4. Apply patch in-memory ---
+        modified_preset = apply_patch_dict(base_preset, changes)
+
+        # --- 5. Render audio preview ---
+        import asyncio
+        loop = asyncio.get_event_loop()
+        audio_b64: str | None = await loop.run_in_executor(
+            None, render_preset_to_wav_b64, modified_preset
+        )
+
+        # --- 6. Return ---
+        return {
+            "modified_preset": modified_preset,
+            "changes": changes,
+            "explanation": explanation,
+            "audio_b64": audio_b64,
+        }
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Modification failed: {str(e)}")
 
 
 @app.post("/api/chat")
