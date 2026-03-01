@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { createClient, type User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
+
+// Added Import Statement for new LoginPanel Component (Sprint 3 - User Story 5)
+import LoginPanel from "@/app/components/Authentication/LoginPanel";
+
 import { PresetViewer, parseVitalPreset, type ParsedPreset, type RawVitalPreset } from "../components/PresetViewer";
 import { CreatePostDialog, PostForm, type PostFormValues } from "../components/CreatePost";
 import { responseCookiesToRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
@@ -28,8 +32,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 export default function BrowsePage() {
   const [user, setUser] = useState<User | null>(null);
   const [showAuthPanel, setShowAuthPanel] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
 
   // New state for create post dialog and form (Sprint 3 - User Story 5)
@@ -186,32 +188,6 @@ export default function BrowsePage() {
     });
   };
 
-  const handleDiscordLogin = async () => {
-    if (!supabase) {
-      setAuthError("Supabase not configured (set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY).");
-      return;
-    }
-
-    setAuthError(null);
-    setAuthLoading(true);
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "discord",
-      options: {
-        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
-
-    setAuthLoading(false);
-    if (error) setAuthError(error.message);
-  };
-
-  const handleSignOut = async () => {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-    setShowAuthPanel(false);
-  };
-
   // Create-post dialog displays a prompt when the user either signs up/logs in or continues anonymously when creating a new post
   const handlePostAnonymously = () => {
     setShowCreateDialog(false);  // Hide authentication choice dialog
@@ -248,7 +224,14 @@ export default function BrowsePage() {
         presetId = uploadData.id;
       }
 
-      const response = await fetch(`${API_URL}/posts`, {
+      // Build URL with user_id if authenticated so backend can associate the post with the user
+      // If posting anonymously, the backend will create the post without an associated user account
+      const url = new URL(`${API_URL}/posts`);
+      if (user?.id) {
+        url.searchParams.append("user_id", user.id);
+      }
+      
+      const response = await fetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -362,57 +345,18 @@ export default function BrowsePage() {
             </button>
           )}
 
+          {/* Revised Code: Replaced the old inline authentication panel with a new LoginPanel component */}
           {showAuthPanel && (
-            <div className="fixed right-6 top-16 z-50 w-80 rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl shadow-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900">
-              {!supabase && (
-                <div className="text-sm text-red-600 dark:text-red-400">
-                  Supabase env vars missing. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
-                </div>
-              )}
-
-              {supabase && (
-                <>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-sm font-semibold text-black dark:text-white">Account</div>
-                    <button
-                      className="text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                      onClick={() => setShowAuthPanel(false)}
-                    >
-                      Close
-                    </button>
-                  </div>
-                    {user ? (
-                   <div className="space-y-3">
-                  <button
-                    onClick={() => router.push("/profile")}
-                      className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 text-left hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 w-full"
-                    >
-                    Signed in as <span className="font-medium">{user.email}</span>
-                    </button>
-                    <button
-                    onClick={handleSignOut}
-                  className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-                          >
-                        Sign out
-                      </button>
-                    </div>
-                  ) : (
-
-                    <div className="space-y-3">
-                      <div className="text-sm text-zinc-700 dark:text-zinc-200">Sign in to continue</div>
-                      <button
-                        onClick={handleDiscordLogin}
-                        disabled={authLoading}
-                        className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700"
-                      >
-                        <span aria-hidden>💬</span>
-                        {authLoading ? "Redirecting..." : "Continue with Discord"}
-                      </button>
-                      {authError && <div className="text-xs text-red-600 dark:text-red-400">{authError}</div>}
-                    </div>
-                  )}
-                </>
-              )}
+            <div className="fixed right-6 top-16 z-50 w-80">
+              <LoginPanel
+                onClose={() => setShowAuthPanel(false)}
+                onLoginSuccess={(newUser) => {
+                  // This will update the parent component state when the user logs in successfully
+                  setUser(newUser);
+                  // After logging in, the authenication panel will automatically close
+                  setShowAuthPanel(false);
+                }}
+              />
             </div>
           )}
         </div>
@@ -625,12 +569,13 @@ export default function BrowsePage() {
               Create a Post
             </h2>
             <PostForm
-              presets={[]} // TODO: Pass the actual presets later when implementing preset attachment to posts
+              presets={[]}
               values={postFormValues}
               onChange={setPostFormValues}
               onSubmit={handleSubmitPost}
               isSubmitting={isSubmitting}
               error={postError}
+              isAuthenticated={!!user?.id}
             />
             <button
               onClick={() => setShowPostForm(false)}

@@ -33,6 +33,7 @@ interface PostFormProps {
     onSubmit: () => void; // Callback function to handle form submission when the user clicks the "Create Post" button
     isSubmitting?: boolean; // Indicates whether the form is currently being submitted. If so, the submit button will be disabled to prevent multiple submissions
     error?: string | null; // An optional error message that can be displayed to the user if there is an issue with form submission
+    isAuthenticated?: boolean; // Indicates whether the user is authenticated or not which can conditionally render certain form options based on the user's authentication status
 }
 
 /**
@@ -49,6 +50,7 @@ export default function PostForm({
     onSubmit,
     isSubmitting = false,
     error = null,
+    isAuthenticated = false,
 }: PostFormProps) {
     return (
         <form
@@ -87,6 +89,7 @@ export default function PostForm({
             </div>
 
             {/* Preset selection: optional dropdown */}
+            {isAuthenticated && presets.length > 0 && (
             <div>
                 <label className="block text-sm font-medium text-black dark:text-white mb-1">
                     Preset (optional)
@@ -104,6 +107,7 @@ export default function PostForm({
                     ))}
                 </select>
             </div>
+            )}
 
             {/* Upload preset: optional .vital file upload */}
             <div>
