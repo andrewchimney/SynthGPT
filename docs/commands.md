@@ -32,3 +32,7 @@ curl -X POST "http://localhost:8000/api/retrieve" \
 
 ssh -i synth.key opc@170.9.30.159
 systemctl status ollama
+
+ollama serve
+ollama list
+curl -s http://170.9.30.159:11434/api/generate \  -H "Content-Type: application/json" \  -d '{"model":"qwen2.5:7b-instruct","prompt":"I need to edit a .vital file can you help me?","stream":false}'

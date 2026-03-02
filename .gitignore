@@ -26,7 +26,8 @@ __pycache__/
 .wav
 .zip
 .7z
-.pub
-.key
+synth.pub
+synth.key
 
 630k-audioset-best.ptpc4knovb.tmp
+.tmp

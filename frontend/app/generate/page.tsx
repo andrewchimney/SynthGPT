@@ -122,7 +122,7 @@ export default function GeneratePage() {
 
     // Call the /api/retrieve endpoint
     try {
-      const res = await fetch("http://localhost:8000/api/retrieve", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/retrieve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query, k: 5 }),

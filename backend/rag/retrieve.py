@@ -31,6 +31,8 @@ def retrieve(req: RetrieveRequest, request: Request):
     # cosine normalize 
     emb = emb / (np.linalg.norm(emb) + 1e-9)
     emb_list = emb.flatten().tolist() if hasattr(emb, 'ndim') and emb.ndim > 1 else emb.tolist()
+    
+    print(f"Received query: {req.query}")
 
     # Try the RPC call
     res = supabase.rpc(
