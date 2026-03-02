@@ -18,23 +18,35 @@ interface UserProfile {
   created_at?: string;
 }
 
-interface PresetData {
+interface SavedPresetData {
   id: string;
-  uuid: string;
-  name: string;
+  owner_user_id: string;
+  creator_user_id: string | null;
+  title: string;
+  description: string | null;
+  visibility: string;
+  preset_object_key: string;
+  preview_object_key: string | null;
+  source: string;
   created_at: string;
 }
 
 interface PostData {
   id: string;
-  uuid: string;
+  owner_user_id: string | null;
   title: string;
+  description: string | null;
+  visibility: string;
   created_at: string;
 }
+
+// Legacy interface for compatibility
+interface PresetData extends SavedPresetData {}
 
 export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [profileUrl, setProfileUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showAccountPopup, setShowAccountPopup] = useState(false);
@@ -54,10 +66,11 @@ export default function ProfilePage() {
   // New states for History and Posts
   const [showHistoryPopup, setShowHistoryPopup] = useState(false);
   const [showPostsPopup, setShowPostsPopup] = useState(false);
-  const [presets, setPresets] = useState<PresetData[]>([]);
+  const [presets, setPresets] = useState<SavedPresetData[]>([]);
   const [posts, setPosts] = useState<PostData[]>([]);
   const [loadingPresets, setLoadingPresets] = useState(false);
   const [loadingPosts, setLoadingPosts] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -79,6 +92,7 @@ export default function ProfilePage() {
       setUser(currentUser);
 
       if (!currentUser) {
+        setIsLoading(false);
         router.push("/");
         return;
       }
@@ -109,10 +123,17 @@ export default function ProfilePage() {
       if (profile?.generation_preferences) {
         setGenerationPreferences(profile.generation_preferences);
       }
+
+      setIsLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => setUser(session?.user ?? null)
+      (_event, session) => {
+        setUser(session?.user ?? null);
+        if (!session?.user) {
+          router.push("/");
+        }
+      }
     );
 
     return () => {
@@ -212,16 +233,11 @@ export default function ProfilePage() {
 
   try {
     setLoadingPresets(true);
-
-    // Demo values, fix when psots and presetsare ready
-    const mockPresets = [
-      { id: '1', uuid: 'abc123-def456-ghi789', name: 'Rock Preset', created_at: '2024-01-15' },
-      { id: '2', uuid: 'jkl012-mno345-pqr678', name: 'Jazz Preset', created_at: '2024-01-20' },
-      { id: '3', uuid: 'stu901-vwx234-yza567', name: 'Electronic Preset', created_at: '2024-01-25' },
-    ];
-
-    setPresets(mockPresets);
-
+    const response = await fetch(`/api/users/${user.id}/saved-presets`);
+    if (!response.ok) throw new Error("Failed to fetch presets");
+    
+    const data = await response.json();
+    setPresets(data.presets || []);
   } catch (error) {
     console.log("Error fetching presets:", error);
     setPresets([]);
@@ -235,14 +251,13 @@ export default function ProfilePage() {
     
     try {
       setLoadingPosts(true);
-    // Demo values, fix when psots and presetsare ready
-      const mockPosts: PostData[] = [
-        { id: '1', uuid: 'bcd234-efg567-hij890', title: 'My First Post', created_at: '2024-01-10' },
-        { id: '2', uuid: 'klm123-nop456-qrs789', title: 'Music Theory Discussion', created_at: '2024-01-18' },
-      ];
+      const response = await fetch("/api/posts");
+      if (!response.ok) throw new Error("Failed to fetch posts");
       
-      setPosts(mockPosts);
-      
+      const data = await response.json();
+      // Filter posts to only show user's own posts
+      const userPosts = data.posts?.filter((post: PostData) => post.owner_user_id === user.id) || [];
+      setPosts(userPosts);
     } catch (error) {
       console.log("Error fetching posts:", error);
       setPosts([]);
@@ -337,6 +352,7 @@ export default function ProfilePage() {
 
   const closeHistoryPopup = () => {
     setShowHistoryPopup(false);
+    setSelectedPresetId(null);
   };
 
   const closePostsPopup = () => {
@@ -357,7 +373,16 @@ export default function ProfilePage() {
     }
   };
 
-  if (!user) return <div />;
+  if (!user) return <div className="min-h-screen flex items-center justify-center bg-black">
+    {isLoading ? (
+      <div className="text-center">
+        <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white/70 mb-4"></div>
+        <p className="text-white text-lg">Loading...</p>
+      </div>
+    ) : (
+      <p className="text-white text-lg">Redirecting to login...</p>
+    )}
+  </div>;
 
   return (
     <div className="min-h-screen flex flex-col font-sans">
@@ -607,7 +632,7 @@ export default function ProfilePage() {
             onClick={closeHistoryPopup}
           >
             <div 
-              className="relative rounded-3xl max-w-2xl w-full mx-4 overflow-hidden shadow-2xl"
+              className="relative rounded-3xl max-w-4xl w-full mx-4 overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
               style={{
                 border: "2px solid rgba(255, 255, 255, 0.3)",
@@ -629,7 +654,7 @@ export default function ProfilePage() {
                 </button>
                 <div className="text-center mb-6">
                   <span className="text-4xl font-extrabold text-white">
-                    Preset History
+                    Saved Presets
                   </span>
                 </div>
               </div>
@@ -652,6 +677,59 @@ export default function ProfilePage() {
                       </span>
                     </div>
                   </div>
+                ) : selectedPresetId ? (
+                  <div className="space-y-4 pt-4">
+                    <button
+                      onClick={() => setSelectedPresetId(null)}
+                      className="mb-4 px-4 py-2 bg-white/95 text-zinc-800 rounded-lg font-semibold hover:bg-white transition"
+                    >
+                      ← Back to List
+                    </button>
+                    {presets
+                      .filter((p) => p.id === selectedPresetId)
+                      .map((preset) => (
+                        <div key={preset.id} className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 border border-white/30 shadow-lg">
+                          <div className="space-y-4">
+                            <div>
+                              <h3 className="text-2xl font-bold text-zinc-800 mb-2">{preset.title}</h3>
+                              {preset.description && (
+                                <p className="text-zinc-600 text-sm mb-4">{preset.description}</p>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="font-semibold text-zinc-700">Visibility:</span>
+                                <p className="text-zinc-600 capitalize">{preset.visibility}</p>
+                              </div>
+                              <div>
+                                <span className="font-semibold text-zinc-700">Source:</span>
+                                <p className="text-zinc-600 capitalize">{preset.source}</p>
+                              </div>
+                              {preset.creator_user_id && (
+                                <div>
+                                  <span className="font-semibold text-zinc-700">Created by:</span>
+                                  <p className="text-zinc-600">{preset.creator_user_id}</p>
+                                </div>
+                              )}
+                              <div>
+                                <span className="font-semibold text-zinc-700">Date:</span>
+                                <p className="text-zinc-600">{formatDate(preset.created_at)}</p>
+                              </div>
+                            </div>
+                            <div className="pt-2 border-t border-zinc-200 space-y-2">
+                              <div className="text-xs">
+                                <span className="font-mono text-zinc-600 text-xs break-all">Preset: {preset.preset_object_key}</span>
+                              </div>
+                              {preset.preview_object_key && (
+                                <div className="text-xs">
+                                  <span className="font-mono text-zinc-600 text-xs break-all">Preview: {preset.preview_object_key}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
                 ) : (
                   <div className="space-y-6 pt-4">
                     {presets.length === 0 ? (
@@ -661,31 +739,37 @@ export default function ProfilePage() {
                             No presets found
                           </span>
                           <p className="text-lg text-zinc-600 mt-2">
-                            You haven't created any presets yet.
+                            You haven't saved any presets yet.
                           </p>
                         </div>
                       </div>
                     ) : (
                       <div className="space-y-4">
                         {presets.map((preset) => (
-                          <div 
+                          <button
                             key={preset.id}
-                            className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 border border-white/30 shadow-lg"
+                            onClick={() => setSelectedPresetId(preset.id)}
+                            className="w-full text-left bg-white/95 backdrop-blur-sm rounded-2xl p-6 border border-white/30 shadow-lg hover:bg-white/100 transition"
                           >
                             <div className="flex justify-between items-start mb-3">
                               <div>
                                 <div className="text-lg font-bold text-zinc-800">
-                                  {preset.name}
+                                  {preset.title || "Untitled Preset"}
                                 </div>
-                                <div className="text-sm text-zinc-600 font-mono mt-1">
-                                  UUID: {preset.uuid}
-                                </div>
+                                {preset.description && (
+                                  <p className="text-sm text-zinc-600 mt-1 line-clamp-2">
+                                    {preset.description}
+                                  </p>
+                                )}
                               </div>
                               <div className="text-sm text-zinc-500">
-                                Created: {formatDate(preset.created_at)}
+                                {formatDate(preset.created_at)}
                               </div>
                             </div>
-                          </div>
+                            <div className="text-xs text-zinc-500 text-right">
+                              Click to preview →
+                            </div>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -703,7 +787,7 @@ export default function ProfilePage() {
             onClick={closePostsPopup}
           >
             <div 
-              className="relative rounded-3xl max-w-2xl w-full mx-4 overflow-hidden shadow-2xl"
+              className="relative rounded-3xl max-w-2xl w-full mx-4 overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
               style={{
                 border: "2px solid rgba(255, 255, 255, 0.3)",
@@ -766,20 +850,27 @@ export default function ProfilePage() {
                         {posts.map((post) => (
                           <div 
                             key={post.id}
-                            className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 border border-white/30 shadow-lg"
+                            className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 border border-white/30 shadow-lg hover:shadow-xl transition"
                           >
                             <div className="flex justify-between items-start mb-3">
-                              <div>
+                              <div className="flex-1">
                                 <div className="text-lg font-bold text-zinc-800">
                                   {post.title}
                                 </div>
-                                <div className="text-sm text-zinc-600 font-mono mt-1">
-                                  UUID: {post.uuid}
+                                {post.description && (
+                                  <p className="text-sm text-zinc-600 mt-2 line-clamp-3">
+                                    {post.description}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="ml-4 text-right">
+                                <div className="text-xs font-semibold text-white bg-zinc-600 px-2 py-1 rounded-full">
+                                  {post.visibility}
                                 </div>
                               </div>
-                              <div className="text-sm text-zinc-500">
-                                Created: {formatDate(post.created_at)}
-                              </div>
+                            </div>
+                            <div className="text-xs text-zinc-500 mt-3 pt-3 border-t border-zinc-200">
+                              Created: {formatDate(post.created_at)}
                             </div>
                           </div>
                         ))}
